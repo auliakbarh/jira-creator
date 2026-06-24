@@ -137,6 +137,32 @@ npx ts-node src/index.ts bulk output-uac/<slug>-<timestamp>.json
 > Heading, tabel `| EN | ID |`, link, dan bullet di `description` akan ter-render dengan
 > benar di JIRA — `toADF` mengonversi markdown tersebut ke Atlassian Document Format.
 
+### Buat Epic + breakdown task otomatis (Google Gemini)
+
+Dari satu deskripsi epic, Gemini memecahnya menjadi beberapa child task, lalu command
+membuat **Epic + semua task-nya sekaligus** di JIRA (tiap task ditautkan ke epic via field
+`parent`).
+
+```bash
+# Dari teks langsung
+npx ts-node src/index.ts epic --text "Membangun fitur wishlist: simpan produk favorit, lihat daftar, hapus item, pindah ke keranjang"
+
+# Dari file
+npx ts-node src/index.ts epic --file input/epic.md --project DEV
+
+# Preview & simpan rencana TANPA membuat tiket (tidak butuh kredensial JIRA)
+npx ts-node src/index.ts epic -t "..." --dry-run
+```
+
+Alur: generate breakdown → preview epic + daftar task → simpan rencana ke
+`output-uac/epic-<slug>-<timestamp>.json` → (kecuali `--dry-run`) konfirmasi → buat epic →
+buat semua task tertaut ke epic. Butuh `GEMINI_API_KEY` **dan** kredensial JIRA (kecuali
+`--dry-run` yang hanya butuh Gemini).
+
+> Penautan epic memakai field `parent`. Pada sebagian project company-managed lama, relasi
+> epic–task mungkin perlu "Epic Link" custom field — jika semua task gagal di field
+> `parent`, cek tipe project JIRA-mu.
+
 ---
 
 ## 📁 Format File Input
@@ -189,3 +215,10 @@ node dist/index.js whoami
 | `-m, --model <model>` | uac | Override model Gemini |
 | `-p, --project <key>` | uac | Project key untuk template tiket (override .env) |
 | `--type <type>` | uac | Issue type template tiket (skip prompt): Story\|Task\|Bug\|Epic |
+| `-f, --file <path>` | epic | Baca deskripsi epic dari file `.md`/`.txt` |
+| `-t, --text <text>` | epic | Deskripsi epic sebagai teks langsung |
+| `-o, --out-dir <dir>` | epic | Folder simpan rencana breakdown JSON (default `output-uac`) |
+| `-l, --lang <en\|id>` | epic | Bahasa output (default `en`) |
+| `-m, --model <model>` | epic | Override model Gemini |
+| `-p, --project <key>` | epic | Project key (override .env) |
+| `--dry-run` | epic | Hanya generate & simpan rencana; tidak membuat tiket |

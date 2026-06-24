@@ -11,6 +11,7 @@ export interface TicketInput {
   story_points?: number;
   assignee_account_id?: string;
   projectKey?: string;
+  parentKey?: string;   // link this issue to a parent epic/issue (fields.parent)
   // extra fields from CSV/JSON passthrough
   [key: string]: unknown;
 }
@@ -62,6 +63,18 @@ export interface UACResult {
   filePath: string;
   fileName: string;
   title: string;
+}
+
+// ─── Epic breakdown (epic → child tasks) ─────────────────────────────────────
+export interface EpicBreakdownTask {
+  summary: string;
+  description?: string;
+  issuetype?: IssueType;   // 'Story' | 'Task'
+}
+
+export interface EpicBreakdown {
+  epic: { summary: string; description?: string };
+  tasks: EpicBreakdownTask[];
 }
 
 export type TemplateKey = 'bug' | 'story' | 'task' | 'epic';

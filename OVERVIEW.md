@@ -28,6 +28,11 @@ title, a Description block of resource links, and numbered uppercase Gherkin
 needs a `GEMINI_API_KEY` but no JIRA credentials, and does not create the ticket itself —
 feed the generated JSON to `bulk` to create it.
 
+The **`epic`** command goes one step further: given an epic description, Gemini breaks it
+into a set of child tasks, and the command creates the Epic plus all child issues (each
+linked to the epic) in a single run. It needs both `GEMINI_API_KEY` and JIRA credentials;
+use `--dry-run` to preview/save the breakdown plan without creating anything.
+
 ## Why It Exists
 
 Creating JIRA tickets through the web UI is slow and repetitive, especially for bulk
@@ -46,6 +51,7 @@ formatting through reusable templates.
 | `template [-p KEY]` | Create a ticket from a structured template |
 | `bulk <file> [-p KEY] [-o out.json]` | Create many tickets from a file |
 | `uac [text] [-f file] [-l en\|id] [-o dir] [-m model] [-p KEY] [--type TYPE]` | Generate UAC via Google Gemini → `output-uac/<slug>.md` + `<slug>.json` ticket template |
+| `epic [text] [-f file] [-p KEY] [-m model] [-l en\|id] [--dry-run]` | Create an Epic + Gemini-generated breakdown of child tasks (linked to the epic) |
 
 **Flags:** `-p, --project <key>` overrides the default project; `-o, --output <file>`
 (bulk only) saves results to a JSON file. For `uac`: `-f/--file` reads the requirement
@@ -56,7 +62,7 @@ folder (default `output-uac`), `-l/--lang` picks the output language (`en` defau
 
 ## How It Works
 
-The codebase is small and framework-free, split into seven single-responsibility modules
+The codebase is small and framework-free, split into eight single-responsibility modules
 under `src/`:
 
 - **`index.ts`** — CLI entry point. Defines all commands (`commander`) and owns every
@@ -76,6 +82,9 @@ under `src/`:
   calls Gemini, tidies the markdown spacing, and saves both the `.md` and a bulk-compatible
   JSON ticket template (`splitUAC` → `buildTicketTemplate` → `saveTicketTemplate`) to
   `output-uac/<title-slug>-<timestamp>.{md,json}`.
+- **`epic.ts`** — asks Gemini (via forced-JSON `generateJSON`) to break an epic into a set
+  of child tasks, saves the plan, and feeds it to `createTicket`/`createTicketsBulk` so the
+  epic and its linked children are created together.
 - **`types.ts`** — shared TypeScript interfaces.
 
 Project key resolution is consistent across all commands: the `--project` flag wins,

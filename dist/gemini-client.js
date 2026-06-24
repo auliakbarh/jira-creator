@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.generateContent = generateContent;
+exports.generateJSON = generateJSON;
 const API_HOST = 'https://generativelanguage.googleapis.com';
 const API_VERSION = 'v1beta';
 const API_KEY = () => process.env.GEMINI_API_KEY;
@@ -13,7 +14,9 @@ const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 // Mirrors jira-client.ts: one fetch helper, unwraps the API error shape into a
 // thrown Error so callers can `try/catch` uniformly. Transient 429/5xx responses
 // are retried with exponential backoff (Gemini frequently returns a brief 503).
-async function generateContent(prompt, model = MODEL()) {
+// `extraConfig` is merged into generationConfig (e.g. responseMimeType / responseSchema
+// for forced-JSON output).
+async function generateContent(prompt, model = MODEL(), extraConfig = {}) {
     const url = `${API_HOST}/${API_VERSION}/models/${model}:generateContent`;
     let lastError;
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
@@ -29,6 +32,7 @@ async function generateContent(prompt, model = MODEL()) {
                     temperature: 0.4,
                     topP: 0.95,
                     maxOutputTokens: 8192,
+                    ...extraConfig,
                 },
             }),
         });
@@ -51,4 +55,20 @@ async function generateContent(prompt, model = MODEL()) {
         return text.trim();
     }
     throw lastError ?? new Error('Gemini request failed');
+}
+// ─── Structured JSON output ──────────────────────────────────────────────────
+// Forces `responseMimeType: application/json` (plus an optional responseSchema) so
+// Gemini returns parseable JSON. Strips an accidental ```json fence just in case.
+async function generateJSON(prompt, model = MODEL(), schema) {
+    const config = { responseMimeType: 'application/json' };
+    if (schema)
+        config.responseSchema = schema;
+    const raw = await generateContent(prompt, model, config);
+    const cleaned = raw.replace(/^```(?:json)?\s*\n/, '').replace(/\n```\s*$/, '').trim();
+    try {
+        return JSON.parse(cleaned);
+    }
+    catch {
+        throw new Error('Gemini did not return valid JSON');
+    }
 }

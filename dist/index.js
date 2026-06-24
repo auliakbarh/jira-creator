@@ -13,6 +13,7 @@ const jira_client_1 = require("./jira-client");
 const file_reader_1 = require("./file-reader");
 const templates_1 = require("./templates");
 const uac_1 = require("./uac");
+const epic_1 = require("./epic");
 // ─── Guard: check required env vars ──────────────────────────────────────────
 function checkEnv() {
     const missing = ['JIRA_BASE_URL', 'JIRA_EMAIL', 'JIRA_API_TOKEN'].filter(k => !process.env[k]);
@@ -368,6 +369,130 @@ async function cmdUac(textArgs, opts) {
         console.error(chalk_1.default.red('  Gagal menyimpan template JSON: ' + err.message + '\n'));
     }
 }
+// ─── Command: epic (create Epic + Gemini breakdown of child tasks) ───────────
+async function cmdEpic(textArgs, opts) {
+    checkGeminiEnv();
+    if (!opts.dryRun)
+        checkEnv(); // creating tickets needs JIRA creds; dry-run does not
+    header();
+    // Resolve the epic input: --file > --text > positional args > prompt.
+    let input;
+    let source = 'teks';
+    try {
+        if (opts.file) {
+            input = await (0, uac_1.readUACInput)(opts.file);
+            source = opts.file;
+        }
+        else if (opts.text) {
+            input = opts.text;
+        }
+        else if (textArgs.length) {
+            input = textArgs.join(' ');
+        }
+        else {
+            const { text } = await (0, prompts_1.default)({
+                type: 'text', name: 'text',
+                message: 'Deskripsikan epic-nya:',
+                validate: v => v.trim().length > 0 || 'Wajib diisi',
+            });
+            if (!text) {
+                console.log(chalk_1.default.yellow('Dibatalkan.\n'));
+                return;
+            }
+            input = text;
+        }
+    }
+    catch (err) {
+        console.error(chalk_1.default.red('Gagal membaca input: ' + err.message + '\n'));
+        return;
+    }
+    if (!input || !input.trim()) {
+        console.log(chalk_1.default.yellow('Input kosong. Dibatalkan.\n'));
+        return;
+    }
+    const lang = opts.lang ?? 'en';
+    const outDir = opts.outDir ?? epic_1.DEFAULT_EPIC_OUTPUT_DIR;
+    const projectKey = opts.project ?? process.env.JIRA_PROJECT_KEY ?? 'ENG';
+    console.log(chalk_1.default.gray(`Sumber: ${source}  •  Bahasa: ${lang}  •  Project: ${projectKey}  •  Model: ${opts.model ?? process.env.GEMINI_MODEL ?? 'gemini-2.5-flash'}\n`));
+    // 1. Generate the breakdown with Gemini.
+    const spinner = (0, ora_1.default)('Membreakdown epic dengan Google Gemini…').start();
+    let breakdown;
+    try {
+        breakdown = await (0, epic_1.generateBreakdown)(input, { lang, model: opts.model });
+        spinner.succeed(chalk_1.default.green(`Breakdown selesai: 1 epic + ${breakdown.tasks.length} task`));
+    }
+    catch (err) {
+        spinner.fail('Gagal: ' + err.message);
+        return;
+    }
+    // 2. Preview + save the plan.
+    console.log('\n' + chalk_1.default.bold('📋 Epic:'));
+    console.log(chalk_1.default.cyan('  ') + breakdown.epic.summary);
+    console.log('\n' + chalk_1.default.bold(`📋 Tasks (${breakdown.tasks.length}):`));
+    breakdown.tasks.forEach((t, i) => {
+        console.log(chalk_1.default.cyan(`  [${i + 1}] `) + `${String(t.issuetype ?? 'Task').padEnd(5)} | ${t.summary}`);
+    });
+    console.log();
+    try {
+        const planPath = await (0, epic_1.saveBreakdownPlan)(breakdown, outDir, fileTimestamp());
+        console.log(chalk_1.default.gray(`Rencana disimpan: ${planPath}\n`));
+    }
+    catch (err) {
+        console.error(chalk_1.default.red('Gagal menyimpan rencana: ' + err.message + '\n'));
+    }
+    if (opts.dryRun) {
+        console.log(chalk_1.default.yellow('Dry-run: tidak ada tiket yang dibuat di JIRA.\n'));
+        return;
+    }
+    // 3. Confirm, then create the epic and link the children to it.
+    const { confirm } = await (0, prompts_1.default)({
+        type: 'confirm', name: 'confirm',
+        message: `Buat 1 epic + ${breakdown.tasks.length} task ke JIRA (project ${projectKey})?`,
+        initial: true,
+    });
+    if (!confirm) {
+        console.log(chalk_1.default.yellow('Dibatalkan.\n'));
+        return;
+    }
+    const epicSpinner = (0, ora_1.default)('Membuat epic…').start();
+    let epicKey;
+    try {
+        const epic = await (0, jira_client_1.createTicket)({
+            summary: breakdown.epic.summary,
+            description: breakdown.epic.description,
+            issuetype: 'Epic',
+            projectKey,
+            labels: ['epic'],
+        });
+        epicKey = epic.key;
+        epicSpinner.succeed(chalk_1.default.green(`Epic dibuat: ${epic.key}`));
+        console.log(chalk_1.default.underline.blue(`  ${epic.url}\n`));
+    }
+    catch (err) {
+        epicSpinner.fail('Gagal membuat epic: ' + err.message);
+        return;
+    }
+    const children = breakdown.tasks.map(t => ({
+        summary: t.summary,
+        description: t.description,
+        issuetype: t.issuetype ?? 'Task',
+        projectKey,
+        parentKey: epicKey,
+        labels: ['epic-breakdown'],
+    }));
+    const childSpinner = (0, ora_1.default)(`Membuat ${children.length} task & menautkan ke ${epicKey}…`).start();
+    const results = await (0, jira_client_1.createTicketsBulk)(children);
+    childSpinner.stop();
+    const created = results.filter(r => r.status === 'created');
+    const failed = results.filter(r => r.status === 'failed');
+    created.forEach(r => console.log(chalk_1.default.green(`  ✔ ${r.key}`) + chalk_1.default.gray(` — ${r.input?.slice(0, 55)}`)));
+    failed.forEach(r => console.log(chalk_1.default.red(`  ✖ GAGAL`) + chalk_1.default.gray(` — ${r.input?.slice(0, 45)} (${r.error})`)));
+    console.log(`\nEpic ${chalk_1.default.bold(epicKey)}: ${chalk_1.default.green(created.length + ' task berhasil')}, ${chalk_1.default.red(failed.length + ' gagal')}\n`);
+    if (failed.length) {
+        console.log(chalk_1.default.gray('  Catatan: jika semua task gagal pada field "parent", project mungkin'));
+        console.log(chalk_1.default.gray('  tidak mendukung penautan epic via field parent. Cek tipe project JIRA-mu.\n'));
+    }
+}
 // ─── CLI setup ────────────────────────────────────────────────────────────────
 const projectOpt = ['-p, --project <key>', 'JIRA project key (override .env)'];
 commander_1.program
@@ -406,4 +531,14 @@ commander_1.program.command('uac [text...]')
     .option('-p, --project <key>', 'JIRA project key untuk template tiket (override .env)')
     .option('--type <type>', 'Issue type untuk template tiket (skip prompt): Story|Task|Bug|Epic')
     .action(cmdUac);
+commander_1.program.command('epic [text...]')
+    .description('Buat 1 Epic + breakdown task-nya secara otomatis via Google Gemini')
+    .option('-f, --file <path>', 'Baca deskripsi epic dari file .md atau .txt')
+    .option('-t, --text <text>', 'Deskripsi epic sebagai teks langsung')
+    .option('-o, --out-dir <dir>', `Folder simpan rencana breakdown JSON (default: ${epic_1.DEFAULT_EPIC_OUTPUT_DIR})`)
+    .option('-m, --model <model>', 'Override model Gemini (default dari GEMINI_MODEL)')
+    .option('-l, --lang <lang>', 'Bahasa output: en | id (default: en)')
+    .option('-p, --project <key>', 'JIRA project key (override .env)')
+    .option('--dry-run', 'Hanya generate & simpan rencana; jangan buat tiket di JIRA')
+    .action(cmdEpic);
 commander_1.program.parse();

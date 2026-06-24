@@ -225,6 +225,50 @@ npx ts-node src/index.ts uac -f input/sample-feature.md --type Story -l id -p DE
 
 ---
 
+## 🧱 `epic [text...]` — Buat Epic + breakdown task (Google Gemini)
+
+Dari **satu deskripsi epic**, Gemini memecahnya menjadi beberapa child task, lalu command membuat **Epic + semua task-nya sekaligus** di JIRA — tiap task otomatis ditautkan ke epic (via field `parent`).
+
+**Alur:**
+
+1. Generate breakdown via Gemini (1 epic + 4–8 task; tiap task `Story` atau `Task`).
+2. Tampilkan preview epic + daftar task.
+3. Simpan rencana ke `output-uac/epic-<slug>-<timestamp>.json` (untuk review/re-use).
+4. *(kecuali `--dry-run`)* Minta konfirmasi → buat epic → buat semua task tertaut ke epic.
+5. Laporkan hasil per-task (berhasil/gagal).
+
+Butuh `GEMINI_API_KEY` **dan** kredensial JIRA. Dengan `--dry-run`, hanya butuh Gemini (tidak membuat tiket).
+
+### Sumber input (urutan prioritas)
+
+`--file` → `--text` → argumen posisi `[text...]` → prompt interaktif.
+
+```bash
+# Dari teks langsung
+npx ts-node src/index.ts epic --text "Membangun fitur wishlist: simpan produk favorit, lihat daftar, hapus item, pindah ke keranjang"
+
+# Dari file
+npx ts-node src/index.ts epic --file input/epic.md --project DEV
+
+# Preview + simpan rencana TANPA membuat tiket
+npx ts-node src/index.ts epic -t "..." --dry-run -l id
+```
+
+| Argumen / Flag | Keterangan |
+|---|---|
+| `[text...]` | deskripsi epic sebagai argumen posisi (opsional) |
+| `-f, --file <path>` | baca deskripsi epic dari file `.md` / `.txt` |
+| `-t, --text <text>` | deskripsi epic sebagai teks langsung |
+| `-o, --out-dir <dir>` | folder simpan rencana breakdown JSON (default `output-uac`) |
+| `-l, --lang <en\|id>` | bahasa output (default `en`) |
+| `-m, --model <model>` | override model Gemini |
+| `-p, --project <key>` | project key (override `.env`) |
+| `--dry-run` | hanya generate & simpan rencana; **tidak** membuat tiket |
+
+> **Penautan epic** memakai field `parent`. Pada sebagian project company-managed lama, relasi epic–task mungkin butuh custom field "Epic Link". Jika semua task gagal di field `parent`, periksa tipe project JIRA-mu. Epic tetap berhasil dibuat meski penautan task gagal.
+
+---
+
 ## 🔗 Alur lengkap: dari requirement → tiket JIRA
 
 Gabungkan `uac` (Gemini) dengan `bulk` (JIRA) untuk membuat tiket berisi UAC:
@@ -254,6 +298,9 @@ Heading, tabel `| EN | ID |`, link, dan bullet di description akan **ter-render 
 | `template` | Buat tiket dari template terstruktur | ✅ | — |
 | `bulk <file>` | Buat banyak tiket dari file | ✅ | — |
 | `uac [text]` | Generate UAC → `.md` + template `.json` | — | ✅ |
+| `epic [text]` | Buat Epic + breakdown task tertaut | ✅* | ✅ |
+
+> \* `epic` butuh JIRA hanya saat membuat tiket; dengan `--dry-run` cukup Gemini.
 
 ### Shortcut npm script
 
@@ -263,6 +310,7 @@ Tersedia di `package.json` (untuk `whoami` jalankan langsung via `npx ts-node`):
 npm run create
 npm run template
 npm run uac
+npm run epic
 npm run bulk -- input/sample.csv
 npm run list-projects
 npm run list-types -- ENG

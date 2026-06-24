@@ -10,6 +10,7 @@ export interface TicketInput {
     story_points?: number;
     assignee_account_id?: string;
     projectKey?: string;
+    parentKey?: string;
     [key: string]: unknown;
 }
 export interface CreatedTicket {
@@ -61,6 +62,18 @@ export interface UACResult {
     filePath: string;
     fileName: string;
     title: string;
+}
+export interface EpicBreakdownTask {
+    summary: string;
+    description?: string;
+    issuetype?: IssueType;
+}
+export interface EpicBreakdown {
+    epic: {
+        summary: string;
+        description?: string;
+    };
+    tasks: EpicBreakdownTask[];
 }
 export type TemplateKey = 'bug' | 'story' | 'task' | 'epic';
 export interface TemplateField {

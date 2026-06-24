@@ -167,6 +167,7 @@ export async function createTicket(input: TicketInput): Promise<CreatedTicket> {
     story_points,
     assignee_account_id,
     projectKey  = process.env.JIRA_PROJECT_KEY,
+    parentKey,
   } = input;
 
   const fields: Record<string, unknown> = {
@@ -181,6 +182,7 @@ export async function createTicket(input: TicketInput): Promise<CreatedTicket> {
   if (description)          fields['description']   = toADF(description);
   if (story_points)         fields['story_points']  = Number(story_points);
   if (assignee_account_id)  fields['assignee']      = { accountId: assignee_account_id };
+  if (parentKey)            fields['parent']        = { key: parentKey };
 
   const result = await jiraFetch<{ key: string; id: string }>('/issue', {
     method: 'POST',

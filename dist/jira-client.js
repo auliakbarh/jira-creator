@@ -142,7 +142,7 @@ function toADF(text) {
 }
 // ─── Create single ticket ─────────────────────────────────────────────────────
 async function createTicket(input) {
-    const { summary, description, issuetype = process.env.JIRA_DEFAULT_ISSUE_TYPE || 'Task', priority = process.env.JIRA_DEFAULT_PRIORITY || 'Medium', labels = [], components = [], story_points, assignee_account_id, projectKey = process.env.JIRA_PROJECT_KEY, } = input;
+    const { summary, description, issuetype = process.env.JIRA_DEFAULT_ISSUE_TYPE || 'Task', priority = process.env.JIRA_DEFAULT_PRIORITY || 'Medium', labels = [], components = [], story_points, assignee_account_id, projectKey = process.env.JIRA_PROJECT_KEY, parentKey, } = input;
     const fields = {
         project: { key: projectKey },
         summary,
@@ -157,6 +157,8 @@ async function createTicket(input) {
         fields['story_points'] = Number(story_points);
     if (assignee_account_id)
         fields['assignee'] = { accountId: assignee_account_id };
+    if (parentKey)
+        fields['parent'] = { key: parentKey };
     const result = await jiraFetch('/issue', {
         method: 'POST',
         body: JSON.stringify({ fields }),
