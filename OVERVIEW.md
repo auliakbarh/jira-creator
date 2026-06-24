@@ -1,7 +1,8 @@
 # JIRA Creator — Project Overview
 
 A TypeScript command-line tool for creating JIRA Cloud tickets directly through the
-JIRA REST API v3. No AI, no LLM, no extra billing — all it needs is a JIRA API token.
+JIRA REST API v3. Core ticket creation needs no AI — just a JIRA API token. An optional
+`uac` command additionally uses the Google Gemini API to draft acceptance criteria.
 
 ## What It Does
 
@@ -15,6 +16,14 @@ JIRA REST API v3. No AI, no LLM, no extra billing — all it needs is a JIRA API
 
 It also includes helper commands to verify your credentials and inspect a project's
 metadata before you start creating.
+
+Separately, the **`uac`** command generates **User Acceptance Criteria** from a free-text
+or markdown requirement using **Google Gemini**, and saves the result as a markdown file
+under `output-uac/`. The output follows the house JIRA ticket template
+(`claude-planning/JIRA-TICKET-DESCRIPTION-TEMPLATE.md`): a `[feature][sub] description`
+title, a Description block of resource links, and numbered uppercase Gherkin
+(GIVEN/WHEN/THEN) scenarios with optional EN/ID copy tables and Figma placeholders. This
+command needs a `GEMINI_API_KEY` but no JIRA credentials.
 
 ## Why It Exists
 
@@ -33,13 +42,17 @@ formatting through reusable templates.
 | `create [-p KEY]` | Create a single ticket interactively |
 | `template [-p KEY]` | Create a ticket from a structured template |
 | `bulk <file> [-p KEY] [-o out.json]` | Create many tickets from a file |
+| `uac [text] [-f file] [-l id\|en] [-o dir] [-m model]` | Generate User Acceptance Criteria via Google Gemini → `output-uac/*.md` |
 
 **Flags:** `-p, --project <key>` overrides the default project; `-o, --output <file>`
-(bulk only) saves results to a JSON file.
+(bulk only) saves results to a JSON file. For `uac`: `-f/--file` reads the requirement
+from a `.md`/`.txt` file, `-t/--text` passes it inline, `-o/--out-dir` sets the output
+folder (default `output-uac`), `-l/--lang` picks the output language (`id`/`en`), and
+`-m/--model` overrides the Gemini model.
 
 ## How It Works
 
-The codebase is small and framework-free, split into five single-responsibility modules
+The codebase is small and framework-free, split into seven single-responsibility modules
 under `src/`:
 
 - **`index.ts`** — CLI entry point. Defines all commands (`commander`) and owns every
@@ -52,6 +65,11 @@ under `src/`:
 - **`templates.ts`** — the registry of ticket templates. Each template declares its
   prompt fields and builds a consistently formatted summary and description.
 - **`file-reader.ts`** — parses and validates bulk input from CSV, JSON, and TXT files.
+- **`gemini-client.ts`** — a single `generateContent()` wrapper around the Google Gemini
+  REST API (used only by the `uac` command), mirroring the `jiraFetch` pattern.
+- **`uac.ts`** — builds the UAC prompt (which enforces the house JIRA ticket template),
+  calls Gemini, tidies the markdown spacing, and saves it to
+  `output-uac/<title-slug>-<timestamp>.md`.
 - **`types.ts`** — shared TypeScript interfaces.
 
 Project key resolution is consistent across all commands: the `--project` flag wins,
@@ -93,6 +111,8 @@ Credentials and defaults are read from `.env`:
 | `JIRA_PROJECT_KEY` | — | Default project key (e.g. `ENG`) |
 | `JIRA_DEFAULT_ISSUE_TYPE` | — | Default issue type (e.g. `Task`) |
 | `JIRA_DEFAULT_PRIORITY` | — | Default priority (e.g. `Medium`) |
+| `GEMINI_API_KEY` | for `uac` | Google Gemini API key ([get one](https://aistudio.google.com/app/apikey)) |
+| `GEMINI_MODEL` | — | Gemini model (default `gemini-2.5-flash`) |
 
 ## Building for Production
 

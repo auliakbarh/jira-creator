@@ -32,6 +32,10 @@ JIRA_BASE_URL=https://your-domain.atlassian.net
 JIRA_EMAIL=kamu@perusahaan.com
 JIRA_API_TOKEN=xxxxxxxxxxxxxxxxxxxxxxxx
 JIRA_PROJECT_KEY=ENG
+
+# Opsional — hanya untuk command `uac`
+GEMINI_API_KEY=xxxxxxxxxxxxxxxxxxxxxxxx
+GEMINI_MODEL=gemini-2.5-flash
 ```
 
 **Cara dapat API token JIRA:**
@@ -83,6 +87,36 @@ npx ts-node src/index.ts bulk input/sample.json
 npx ts-node src/index.ts bulk input/sample.csv --project DEV --output output/results.json
 ```
 
+### Buat UAC (User Acceptance Criteria) dengan Google Gemini
+
+Menghasilkan deskripsi tiket JIRA berisi UAC dari requirement berupa **teks** atau
+**file markdown**. Output mengikuti template `claude-planning/JIRA-TICKET-DESCRIPTION-TEMPLATE.md`:
+judul `[feature][sub] short description`, blok Description (link Figma/PRD/Postman/API), dan
+skenario UAC bernomor dalam format Gherkin GIVEN/WHEN/THEN (huruf besar), lengkap dengan
+tabel copy `| EN | ID |` dan placeholder gambar Figma. Hasilnya disimpan sebagai file `.md`
+di folder `output-uac/`.
+
+```bash
+# Dari file markdown / teks
+npx ts-node src/index.ts uac --file input/sample-feature.md
+
+# Dari teks langsung
+npx ts-node src/index.ts uac --text "Pengguna bisa login dengan Google OAuth2"
+
+# Atau teks sebagai argumen
+npx ts-node src/index.ts uac "Fitur reset password via email"
+
+# Tanpa argumen → mode interaktif (paste teks / pilih file)
+npx ts-node src/index.ts uac
+
+# Output bahasa Inggris + folder & model kustom
+npx ts-node src/index.ts uac -f input/sample-feature.md -l en -o docs/uac -m gemini-2.5-pro
+```
+
+> Butuh `GEMINI_API_KEY` di `.env`. Dapatkan di
+> <https://aistudio.google.com/app/apikey>. Command ini **tidak** membutuhkan
+> kredensial JIRA dan **tidak** membuat tiket — hanya menghasilkan file markdown.
+
 ---
 
 ## 📁 Format File Input
@@ -128,3 +162,8 @@ node dist/index.js whoami
 |---|---|---|
 | `-p, --project <key>` | create, template, bulk | Override project key dari .env |
 | `-o, --output <file>` | bulk | Simpan hasil ke file JSON |
+| `-f, --file <path>` | uac | Baca requirement dari file `.md`/`.txt` |
+| `-t, --text <text>` | uac | Requirement sebagai teks langsung |
+| `-o, --out-dir <dir>` | uac | Folder output UAC (default `output-uac`) |
+| `-l, --lang <id\|en>` | uac | Bahasa output UAC (default `id`) |
+| `-m, --model <model>` | uac | Override model Gemini |

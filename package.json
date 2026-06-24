@@ -11,6 +11,7 @@
     "create": "ts-node src/index.ts create",
     "bulk": "ts-node src/index.ts bulk",
     "template": "ts-node src/index.ts template",
+    "uac": "ts-node src/index.ts uac",
     "list-projects": "ts-node src/index.ts list-projects",
     "list-types": "ts-node src/index.ts list-types"
   },

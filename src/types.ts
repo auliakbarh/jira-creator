@@ -41,6 +41,29 @@ export interface JiraIssueType {
   description: string;
 }
 
+// ─── Google Gemini ────────────────────────────────────────────────────────────
+export interface GeminiResponse {
+  candidates?: Array<{
+    content?: { parts?: Array<{ text?: string }> };
+    finishReason?: string;
+  }>;
+  promptFeedback?: { blockReason?: string };
+  error?: { code?: number; message?: string; status?: string };
+}
+
+// ─── UAC generation ─────────────────────────────────────────────────────────
+export interface UACOptions {
+  input: string;       // raw requirement text (from --text or a file)
+  lang?: string;       // 'id' (default) | 'en'
+  model?: string;      // override GEMINI_MODEL
+}
+
+export interface UACResult {
+  filePath: string;
+  fileName: string;
+  title: string;
+}
+
 export type TemplateKey = 'bug' | 'story' | 'task' | 'epic';
 
 export interface TemplateField {

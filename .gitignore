@@ -7,5 +7,6 @@ CLAUDE-rules.md
 claude-planning/
 claude-outputs/
 contents/
+artifacts/
 
 node_modules/

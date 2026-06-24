@@ -8,6 +8,7 @@ import { writeFile } from 'fs/promises';
 import { createTicket, createTicketsBulk, getProjects, getIssueTypes, validateCredentials } from './jira-client';
 import { readInputFile, validateItems, normalizeItems } from './file-reader';
 import { TEMPLATES, applyTemplate } from './templates';
+import { generateUAC, saveUAC, readUACInput, DEFAULT_OUTPUT_DIR } from './uac';
 import { TemplateKey, TicketInput, BulkResult } from './types';
 
 // ─── Guard: check required env vars ──────────────────────────────────────────
@@ -18,6 +19,23 @@ function checkEnv() {
     console.error(chalk.gray('  Copy .env.example → .env and fill in your credentials.\n'));
     process.exit(1);
   }
+}
+
+// ─── Guard: Gemini env (only the UAC command needs this) ─────────────────────
+function checkGeminiEnv() {
+  if (!process.env.GEMINI_API_KEY) {
+    console.error(chalk.red('\n✖ Missing environment variable: GEMINI_API_KEY'));
+    console.error(chalk.gray('  Dapatkan API key di: https://aistudio.google.com/app/apikey'));
+    console.error(chalk.gray('  Lalu isi GEMINI_API_KEY di file .env\n'));
+    process.exit(1);
+  }
+}
+
+// ─── Timestamp for output filenames (YYYY-MM-DD-HHmmss) ──────────────────────
+function fileTimestamp(): string {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
 }
 
 // ─── Header ───────────────────────────────────────────────────────────────────
@@ -259,6 +277,78 @@ async function cmdBulk(filePath: string, opts: { project?: string; output?: stri
   }
 }
 
+// ─── Command: uac (generate User Acceptance Criteria via Gemini) ─────────────
+async function cmdUac(
+  textArgs: string[],
+  opts: { file?: string; text?: string; outDir?: string; model?: string; lang?: string }
+) {
+  checkGeminiEnv();
+  header();
+
+  // Resolve the requirement input: --file > --text > positional args > prompt.
+  let input: string | undefined;
+  let source = 'teks';
+
+  try {
+    if (opts.file) {
+      input = await readUACInput(opts.file);
+      source = opts.file;
+    } else if (opts.text) {
+      input = opts.text;
+    } else if (textArgs.length) {
+      input = textArgs.join(' ');
+    } else {
+      const { mode } = await prompts({
+        type: 'select', name: 'mode',
+        message: 'Sumber requirement:',
+        choices: [
+          { title: 'Ketik / paste teks',        value: 'text' },
+          { title: 'Baca dari file (.md/.txt)',  value: 'file' },
+        ],
+      });
+      if (!mode) { console.log(chalk.yellow('Dibatalkan.\n')); return; }
+
+      if (mode === 'file') {
+        const { filePath } = await prompts({
+          type: 'text', name: 'filePath',
+          message: 'Path file requirement:',
+          validate: v => v.trim().length > 0 || 'Wajib diisi',
+        });
+        if (!filePath) { console.log(chalk.yellow('Dibatalkan.\n')); return; }
+        input = await readUACInput(filePath);
+        source = filePath;
+      } else {
+        const { text } = await prompts({
+          type: 'text', name: 'text',
+          message: 'Tuliskan requirement / fitur:',
+          validate: v => v.trim().length > 0 || 'Wajib diisi',
+        });
+        if (!text) { console.log(chalk.yellow('Dibatalkan.\n')); return; }
+        input = text;
+      }
+    }
+  } catch (err) {
+    console.error(chalk.red('Gagal membaca input: ' + (err as Error).message + '\n'));
+    return;
+  }
+
+  if (!input || !input.trim()) { console.log(chalk.yellow('Input kosong. Dibatalkan.\n')); return; }
+
+  const lang   = opts.lang ?? 'en';
+  const outDir = opts.outDir ?? DEFAULT_OUTPUT_DIR;
+  console.log(chalk.gray(`Sumber: ${source}  •  Bahasa: ${lang}  •  Model: ${opts.model ?? process.env.GEMINI_MODEL ?? 'gemini-2.5-flash'}\n`));
+
+  const spinner = ora('Membuat UAC dengan Google Gemini…').start();
+  try {
+    const markdown = await generateUAC({ input, lang, model: opts.model });
+    const result   = await saveUAC(markdown, outDir, fileTimestamp());
+    spinner.succeed(chalk.green(`UAC berhasil dibuat: ${result.title}`));
+    console.log(chalk.cyan('  File: ') + chalk.underline(result.filePath) + '\n');
+  } catch (err) {
+    spinner.fail('Gagal: ' + (err as Error).message);
+  }
+}
+
 // ─── CLI setup ────────────────────────────────────────────────────────────────
 const projectOpt = ['-p, --project <key>', 'JIRA project key (override .env)'] as const;
 
@@ -294,5 +384,14 @@ program.command('bulk <file>')
   .option(...projectOpt)
   .option('-o, --output <file>', 'Simpan hasil ke file JSON')
   .action(cmdBulk);
+
+program.command('uac [text...]')
+  .description('Buat User Acceptance Criteria (UAC) dari teks/markdown via Google Gemini')
+  .option('-f, --file <path>', 'Baca requirement dari file .md atau .txt')
+  .option('-t, --text <text>', 'Requirement sebagai teks langsung')
+  .option('-o, --out-dir <dir>', `Folder output markdown (default: ${DEFAULT_OUTPUT_DIR})`)
+  .option('-m, --model <model>', 'Override model Gemini (default dari GEMINI_MODEL)')
+  .option('-l, --lang <lang>', 'Bahasa output: en | id (default: en)')
+  .action(cmdUac);
 
 program.parse();
