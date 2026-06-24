@@ -274,6 +274,44 @@ npx ts-node src/index.ts epic -t "..." --dry-run -l id
 
 ---
 
+## 💬 `/uac` — slash command Claude Code (tanpa biaya API)
+
+Alternatif command `uac` yang **tidak memanggil API berbayar**: slash command `/uac` berjalan
+di dalam **sesi Claude Code** dan memakai langganan Claude Code-mu (bukan Anthropic API,
+bukan Gemini API). Berguna kalau ingin menghindari biaya/free-tier API sama sekali.
+
+Outputnya **identik** dengan command `uac` CLI: dua file di `output-uac/` (`<slug>.md` UAC +
+`<slug>.json` template tiket siap-`bulk`), mengikuti template
+`claude-planning/JIRA-TICKET-DESCRIPTION-TEMPLATE.md`.
+
+```text
+# Diketik di dalam Claude Code (BUKAN di terminal/shell):
+/uac input/feature.md
+/uac User bisa reset password lewat email, link berlaku 30 menit
+```
+
+Lalu buat tiketnya seperti biasa:
+
+```bash
+npx ts-node src/index.ts bulk output-uac/<slug>-<timestamp>.json
+```
+
+**Perbandingan singkat:**
+
+| | `uac` CLI | `/uac` (Claude Code) |
+|---|---|---|
+| Dijalankan di | terminal / shell | sesi chat Claude Code |
+| Mesin AI | Gemini / Claude **API** | sesi Claude Code (langganan) |
+| Biaya | API berbayar (Gemini ada free tier) | tanpa biaya API; kena rate-limit langganan |
+| Butuh API key | `GEMINI_API_KEY` / `ANTHROPIC_API_KEY` | tidak |
+| Output | `output-uac/*.md` + `*.json` | sama persis |
+
+> Definisi command ada di `.claude/commands/uac.md`. Karena `.claude/` masuk `.gitignore`,
+> command ini **lokal** (tidak ikut ter-commit/di-share). Default `issuetype` = `Story`
+> (sebut tipe lain untuk override); `projectKey` dari `JIRA_PROJECT_KEY` di `.env` (fallback `ENG`).
+
+---
+
 ## 🔗 Alur lengkap: dari requirement → tiket JIRA
 
 Gabungkan `uac` (Gemini) dengan `bulk` (JIRA) untuk membuat tiket berisi UAC:

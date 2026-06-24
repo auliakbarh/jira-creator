@@ -188,6 +188,24 @@ npx ts-node src/index.ts epic -f input/epic.md --provider claude --dry-run
 | `gemini` | `GEMINI_API_KEY` | `gemini-2.5-flash` (`GEMINI_MODEL`) |
 | `claude` | `ANTHROPIC_API_KEY` | `claude-opus-4-8` (`ANTHROPIC_MODEL`) |
 
+### Alternatif tanpa biaya API: slash command `/uac` (Claude Code)
+
+Tersedia juga slash command `/uac` yang berjalan di dalam sesi **Claude Code** — memakai
+langganan Claude Code-mu, **bukan** Anthropic API, jadi **tidak ada biaya API**. Outputnya
+sama dengan command `uac` CLI (`.md` + template `.json` siap-`bulk`).
+
+```text
+# di dalam Claude Code (bukan terminal):
+/uac input/feature.md
+/uac User bisa reset password lewat email, link berlaku 30 menit
+```
+
+Lalu buat tiketnya seperti biasa: `npx ts-node src/index.ts bulk output-uac/<slug>.json`.
+
+> Command ini didefinisikan di `.claude/commands/uac.md`. Catatan: `.claude/` ada di
+> `.gitignore`, jadi command ini **lokal** (tidak ikut ter-commit). Cocok dipakai bila ingin
+> menghindari biaya API; pemakaian tetap kena rate-limit langganan Claude Code.
+
 ---
 
 ## 📁 Format File Input
