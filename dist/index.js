@@ -330,14 +330,42 @@ async function cmdUac(textArgs, opts) {
     const outDir = opts.outDir ?? uac_1.DEFAULT_OUTPUT_DIR;
     console.log(chalk_1.default.gray(`Sumber: ${source}  •  Bahasa: ${lang}  •  Model: ${opts.model ?? process.env.GEMINI_MODEL ?? 'gemini-2.5-flash'}\n`));
     const spinner = (0, ora_1.default)('Membuat UAC dengan Google Gemini…').start();
+    let markdown;
+    let mdPath;
+    let title;
     try {
-        const markdown = await (0, uac_1.generateUAC)({ input, lang, model: opts.model });
+        markdown = await (0, uac_1.generateUAC)({ input, lang, model: opts.model });
         const result = await (0, uac_1.saveUAC)(markdown, outDir, fileTimestamp());
-        spinner.succeed(chalk_1.default.green(`UAC berhasil dibuat: ${result.title}`));
-        console.log(chalk_1.default.cyan('  File: ') + chalk_1.default.underline(result.filePath) + '\n');
+        mdPath = result.filePath;
+        title = result.title;
+        spinner.succeed(chalk_1.default.green(`UAC berhasil dibuat: ${title}`));
+        console.log(chalk_1.default.cyan('  Markdown: ') + chalk_1.default.underline(mdPath));
     }
     catch (err) {
         spinner.fail('Gagal: ' + err.message);
+        return;
+    }
+    // ── Build a bulk-compatible JIRA ticket template (JSON) ──
+    let issuetype = opts.type ?? '';
+    if (!issuetype) {
+        const r = await (0, prompts_1.default)({
+            type: 'select', name: 'issuetype',
+            message: 'Issue type untuk template tiket JIRA:',
+            choices: ['Story', 'Task', 'Bug', 'Epic'].map(v => ({ title: v, value: v })),
+        });
+        issuetype = r.issuetype ?? 'Story'; // default if the prompt is skipped/cancelled
+    }
+    const projectKey = opts.project ?? process.env.JIRA_PROJECT_KEY ?? 'ENG';
+    const ticket = (0, uac_1.buildTicketTemplate)(markdown, { issuetype, projectKey });
+    try {
+        const jsonPath = await (0, uac_1.saveTicketTemplate)(ticket, mdPath);
+        console.log(chalk_1.default.cyan('  Template: ') + chalk_1.default.underline(jsonPath) +
+            chalk_1.default.gray(`  (issuetype: ${issuetype}, project: ${projectKey})`));
+        console.log(chalk_1.default.gray('\n  Buat tiket dari template ini:'));
+        console.log('  ' + chalk_1.default.bold(`npx ts-node src/index.ts bulk ${jsonPath}`) + '\n');
+    }
+    catch (err) {
+        console.error(chalk_1.default.red('  Gagal menyimpan template JSON: ' + err.message + '\n'));
     }
 }
 // ─── CLI setup ────────────────────────────────────────────────────────────────
@@ -372,8 +400,10 @@ commander_1.program.command('uac [text...]')
     .description('Buat User Acceptance Criteria (UAC) dari teks/markdown via Google Gemini')
     .option('-f, --file <path>', 'Baca requirement dari file .md atau .txt')
     .option('-t, --text <text>', 'Requirement sebagai teks langsung')
-    .option('-o, --out-dir <dir>', `Folder output markdown (default: ${uac_1.DEFAULT_OUTPUT_DIR})`)
+    .option('-o, --out-dir <dir>', `Folder output markdown + template JSON (default: ${uac_1.DEFAULT_OUTPUT_DIR})`)
     .option('-m, --model <model>', 'Override model Gemini (default dari GEMINI_MODEL)')
     .option('-l, --lang <lang>', 'Bahasa output: en | id (default: en)')
+    .option('-p, --project <key>', 'JIRA project key untuk template tiket (override .env)')
+    .option('--type <type>', 'Issue type untuk template tiket (skip prompt): Story|Task|Bug|Epic')
     .action(cmdUac);
 commander_1.program.parse();

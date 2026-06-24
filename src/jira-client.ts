@@ -32,27 +32,127 @@ async function jiraFetch<T>(path: string, options: RequestInit = {}): Promise<T>
   return body as T;
 }
 
-// ─── Convert plain text → Atlassian Document Format ──────────────────────────
-function toADF(text: string): object {
-  const paragraphs = text.split('\n\n').filter(Boolean);
-  return {
-    type: 'doc',
-    version: 1,
-    content: paragraphs.map(para => {
-      // Handle markdown-style bold (**text**)
-      const parts = para.split(/(\*\*[^*]+\*\*)/g);
-      return {
-        type: 'paragraph',
-        content: parts.map(part => {
-          const boldMatch = part.match(/^\*\*(.+)\*\*$/);
-          if (boldMatch) {
-            return { type: 'text', text: boldMatch[1], marks: [{ type: 'strong' }] };
-          }
-          return { type: 'text', text: part };
-        }).filter(p => p.text),
-      };
-    }),
-  };
+// ─── Convert markdown → Atlassian Document Format (ADF) ──────────────────────
+// JIRA API v3 requires `description` as ADF. This supports the markdown that the
+// templates and the `uac` command emit: headings (`#`..`######`), bullet lists
+// (`-`/`*`, incl. `- [ ]`/`- [x]` checkboxes), GFM pipe tables, inline links
+// (`[text](url)`) and bold (`**text**`). Single newlines inside a block become
+// hardBreaks (so stacked Gherkin clauses stay on separate lines); blank lines
+// separate blocks. Anything unrecognised falls back to a paragraph.
+interface ADFNode { type: string; [key: string]: unknown; }
+
+const HEADING_RE   = /^(#{1,6})\s+(.*)$/;
+const LIST_RE      = /^\s*[-*]\s+(.*)$/;
+const TABLE_ROW_RE = /^\s*\|.*\|\s*$/;
+const TABLE_SEP_RE = /^\s*\|?[\s:|-]+\|?\s*$/;
+
+// Inline parsing: links and bold within a single line.
+function inlineNodes(text: string): ADFNode[] {
+  const nodes: ADFNode[] = [];
+  const re = /\[([^\]]+)\]\(([^)]+)\)|\*\*([^*]+)\*\*/g;
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > last) nodes.push({ type: 'text', text: text.slice(last, m.index) });
+    if (m[1] !== undefined) {
+      nodes.push({ type: 'text', text: m[1], marks: [{ type: 'link', attrs: { href: m[2] } }] });
+    } else {
+      nodes.push({ type: 'text', text: m[3], marks: [{ type: 'strong' }] });
+    }
+    last = re.lastIndex;
+  }
+  if (last < text.length) nodes.push({ type: 'text', text: text.slice(last) });
+  return nodes.filter(n => n.text !== '');
+}
+
+// A paragraph from one or more lines; consecutive lines are joined with hardBreaks.
+function paragraphFromLines(lines: string[]): ADFNode {
+  const content: ADFNode[] = [];
+  for (const line of lines) {
+    const inline = inlineNodes(line);
+    if (!inline.length) continue;
+    if (content.length) content.push({ type: 'hardBreak' });
+    content.push(...inline);
+  }
+  return { type: 'paragraph', content };
+}
+
+function splitCells(row: string): string[] {
+  return row.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(c => c.trim());
+}
+
+export function toADF(text: string): object {
+  const lines = text.replace(/\r\n/g, '\n').split('\n');
+  const content: ADFNode[] = [];
+  let i = 0;
+
+  const isTableStart = (idx: number) =>
+    TABLE_ROW_RE.test(lines[idx]) &&
+    idx + 1 < lines.length &&
+    TABLE_SEP_RE.test(lines[idx + 1]) &&
+    lines[idx + 1].includes('-');
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    if (line.trim() === '') { i++; continue; }
+
+    // Heading
+    const h = line.match(HEADING_RE);
+    if (h) {
+      content.push({ type: 'heading', attrs: { level: Math.min(h[1].length, 6) }, content: inlineNodes(h[2].trim()) });
+      i++;
+      continue;
+    }
+
+    // GFM pipe table (header row immediately followed by a |---|---| separator)
+    if (isTableStart(i)) {
+      const header = splitCells(lines[i]);
+      i += 2; // skip header + separator
+      const rows: ADFNode[] = [{
+        type: 'tableRow',
+        content: header.map(c => ({ type: 'tableHeader', content: [paragraphFromLines([c])] })),
+      }];
+      while (i < lines.length && TABLE_ROW_RE.test(lines[i])) {
+        const cells = splitCells(lines[i]);
+        rows.push({ type: 'tableRow', content: cells.map(c => ({ type: 'tableCell', content: [paragraphFromLines([c])] })) });
+        i++;
+      }
+      content.push({ type: 'table', attrs: { isNumberColumnEnabled: false, layout: 'default' }, content: rows });
+      continue;
+    }
+
+    // Bullet list (collect contiguous list items)
+    if (LIST_RE.test(line)) {
+      const items: ADFNode[] = [];
+      while (i < lines.length && LIST_RE.test(lines[i])) {
+        const raw = lines[i].match(LIST_RE)![1];
+        const cb  = raw.match(/^\[([ xX])\]\s+(.*)$/); // checkbox → symbol prefix
+        const itemText = cb ? `${cb[1].trim() ? '☑' : '☐'} ${cb[2]}` : raw;
+        items.push({ type: 'listItem', content: [paragraphFromLines([itemText])] });
+        i++;
+      }
+      content.push({ type: 'bulletList', content: items });
+      continue;
+    }
+
+    // Paragraph (consecutive lines until a blank line or another block starts)
+    const paraLines: string[] = [];
+    while (
+      i < lines.length &&
+      lines[i].trim() !== '' &&
+      !HEADING_RE.test(lines[i]) &&
+      !LIST_RE.test(lines[i]) &&
+      !isTableStart(i)
+    ) {
+      paraLines.push(lines[i]);
+      i++;
+    }
+    if (paraLines.length) content.push(paragraphFromLines(paraLines));
+  }
+
+  if (!content.length) content.push({ type: 'paragraph', content: [] });
+  return { type: 'doc', version: 1, content };
 }
 
 // ─── Create single ticket ─────────────────────────────────────────────────────

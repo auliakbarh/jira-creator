@@ -18,12 +18,15 @@ It also includes helper commands to verify your credentials and inspect a projec
 metadata before you start creating.
 
 Separately, the **`uac`** command generates **User Acceptance Criteria** from a free-text
-or markdown requirement using **Google Gemini**, and saves the result as a markdown file
-under `output-uac/`. The output follows the house JIRA ticket template
+or markdown requirement using **Google Gemini**. It writes two files to `output-uac/` with
+the same basename: a markdown document and a bulk-compatible JSON **ticket template**
+(`summary` = the title, `description` = the UAC body, plus `issuetype`/`projectKey`/`labels`).
+The markdown follows the house JIRA ticket template
 (`claude-planning/JIRA-TICKET-DESCRIPTION-TEMPLATE.md`): a `[feature][sub] description`
 title, a Description block of resource links, and numbered uppercase Gherkin
-(GIVEN/WHEN/THEN) scenarios with optional EN/ID copy tables and Figma placeholders. This
-command needs a `GEMINI_API_KEY` but no JIRA credentials.
+(GIVEN/WHEN/THEN) scenarios with optional EN/ID copy tables and Figma placeholders. `uac`
+needs a `GEMINI_API_KEY` but no JIRA credentials, and does not create the ticket itself —
+feed the generated JSON to `bulk` to create it.
 
 ## Why It Exists
 
@@ -42,13 +45,14 @@ formatting through reusable templates.
 | `create [-p KEY]` | Create a single ticket interactively |
 | `template [-p KEY]` | Create a ticket from a structured template |
 | `bulk <file> [-p KEY] [-o out.json]` | Create many tickets from a file |
-| `uac [text] [-f file] [-l id\|en] [-o dir] [-m model]` | Generate User Acceptance Criteria via Google Gemini → `output-uac/*.md` |
+| `uac [text] [-f file] [-l en\|id] [-o dir] [-m model] [-p KEY] [--type TYPE]` | Generate UAC via Google Gemini → `output-uac/<slug>.md` + `<slug>.json` ticket template |
 
 **Flags:** `-p, --project <key>` overrides the default project; `-o, --output <file>`
 (bulk only) saves results to a JSON file. For `uac`: `-f/--file` reads the requirement
 from a `.md`/`.txt` file, `-t/--text` passes it inline, `-o/--out-dir` sets the output
-folder (default `output-uac`), `-l/--lang` picks the output language (`id`/`en`), and
-`-m/--model` overrides the Gemini model.
+folder (default `output-uac`), `-l/--lang` picks the output language (`en` default / `id`),
+`-m/--model` overrides the Gemini model, `-p/--project` sets the template's project key, and
+`--type` sets the issue type (Story/Task/Bug/Epic) without the interactive prompt.
 
 ## How It Works
 
@@ -60,16 +64,18 @@ under `src/`:
   colored output (`chalk`). The other modules are pure logic.
 - **`jira-client.ts`** — all JIRA REST API calls, routed through a single `jiraFetch`
   wrapper that handles Basic authentication and error unwrapping. Includes `toADF()`,
-  which converts plain text (with `**bold**` markdown) into the Atlassian Document
-  Format that the v3 API requires for issue descriptions.
+  a markdown→Atlassian Document Format converter (headings, bullet lists, GFM tables,
+  inline links and bold, with single newlines preserved as line breaks) used for issue
+  descriptions in the v3 API.
 - **`templates.ts`** — the registry of ticket templates. Each template declares its
   prompt fields and builds a consistently formatted summary and description.
 - **`file-reader.ts`** — parses and validates bulk input from CSV, JSON, and TXT files.
 - **`gemini-client.ts`** — a single `generateContent()` wrapper around the Google Gemini
   REST API (used only by the `uac` command), mirroring the `jiraFetch` pattern.
 - **`uac.ts`** — builds the UAC prompt (which enforces the house JIRA ticket template),
-  calls Gemini, tidies the markdown spacing, and saves it to
-  `output-uac/<title-slug>-<timestamp>.md`.
+  calls Gemini, tidies the markdown spacing, and saves both the `.md` and a bulk-compatible
+  JSON ticket template (`splitUAC` → `buildTicketTemplate` → `saveTicketTemplate`) to
+  `output-uac/<title-slug>-<timestamp>.{md,json}`.
 - **`types.ts`** — shared TypeScript interfaces.
 
 Project key resolution is consistent across all commands: the `--project` flag wins,

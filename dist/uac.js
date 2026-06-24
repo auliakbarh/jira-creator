@@ -10,6 +10,9 @@ exports.tidyMarkdown = tidyMarkdown;
 exports.generateUAC = generateUAC;
 exports.slugify = slugify;
 exports.saveUAC = saveUAC;
+exports.splitUAC = splitUAC;
+exports.buildTicketTemplate = buildTicketTemplate;
+exports.saveTicketTemplate = saveTicketTemplate;
 const promises_1 = require("fs/promises");
 const path_1 = __importDefault(require("path"));
 const gemini_client_1 = require("./gemini-client");
@@ -136,4 +139,40 @@ async function saveUAC(markdown, outDir, timestamp) {
     const filePath = path_1.default.join(outDir, fileName);
     await (0, promises_1.writeFile)(filePath, markdown + '\n', 'utf-8');
     return { filePath, fileName, title: extractTitle(markdown) };
+}
+// ─── Split the UAC markdown into a JIRA summary + description ─────────────────
+// The first `# ` heading is the ticket title (the `[feature][sub] …` line). The
+// JIRA summary is that line's text; the description is everything after it.
+function splitUAC(markdown) {
+    const lines = markdown.split('\n');
+    const idx = lines.findIndex(l => /^#\s+/.test(l));
+    if (idx === -1) {
+        const first = lines.find(l => l.trim()) ?? 'UAC';
+        return { summary: first.trim().slice(0, 255), description: markdown.trim() };
+    }
+    const summary = lines[idx].replace(/^#\s+/, '').trim().slice(0, 255);
+    const description = lines.slice(idx + 1).join('\n').trim();
+    return { summary, description };
+}
+// ─── Build a JIRA ticket template (bulk-compatible) from the UAC markdown ─────
+function buildTicketTemplate(markdown, opts) {
+    const { summary, description } = splitUAC(markdown);
+    const ticket = {
+        summary,
+        description,
+        issuetype: opts.issuetype,
+        labels: ['uac'],
+    };
+    if (opts.priority)
+        ticket.priority = opts.priority;
+    if (opts.projectKey)
+        ticket.projectKey = opts.projectKey;
+    return ticket;
+}
+// ─── Persist the ticket template as JSON next to the .md (same basename) ─────
+// The result is consumable directly by `bulk <file.json>`.
+async function saveTicketTemplate(ticket, mdFilePath) {
+    const jsonPath = mdFilePath.replace(/\.md$/, '.json');
+    await (0, promises_1.writeFile)(jsonPath, JSON.stringify(ticket, null, 2) + '\n', 'utf-8');
+    return jsonPath;
 }

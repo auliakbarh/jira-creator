@@ -1,4 +1,5 @@
 import { TicketInput, CreatedTicket, BulkResult, JiraProject, JiraIssueType } from './types';
+export declare function toADF(text: string): object;
 export declare function createTicket(input: TicketInput): Promise<CreatedTicket>;
 export declare function createTicketsBulk(tickets: TicketInput[]): Promise<BulkResult[]>;
 export declare function getProjects(): Promise<JiraProject[]>;

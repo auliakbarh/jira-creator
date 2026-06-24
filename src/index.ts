@@ -8,7 +8,7 @@ import { writeFile } from 'fs/promises';
 import { createTicket, createTicketsBulk, getProjects, getIssueTypes, validateCredentials } from './jira-client';
 import { readInputFile, validateItems, normalizeItems } from './file-reader';
 import { TEMPLATES, applyTemplate } from './templates';
-import { generateUAC, saveUAC, readUACInput, DEFAULT_OUTPUT_DIR } from './uac';
+import { generateUAC, saveUAC, readUACInput, buildTicketTemplate, saveTicketTemplate, DEFAULT_OUTPUT_DIR } from './uac';
 import { TemplateKey, TicketInput, BulkResult } from './types';
 
 // ─── Guard: check required env vars ──────────────────────────────────────────
@@ -280,7 +280,7 @@ async function cmdBulk(filePath: string, opts: { project?: string; output?: stri
 // ─── Command: uac (generate User Acceptance Criteria via Gemini) ─────────────
 async function cmdUac(
   textArgs: string[],
-  opts: { file?: string; text?: string; outDir?: string; model?: string; lang?: string }
+  opts: { file?: string; text?: string; outDir?: string; model?: string; lang?: string; project?: string; type?: string }
 ) {
   checkGeminiEnv();
   header();
@@ -339,13 +339,43 @@ async function cmdUac(
   console.log(chalk.gray(`Sumber: ${source}  •  Bahasa: ${lang}  •  Model: ${opts.model ?? process.env.GEMINI_MODEL ?? 'gemini-2.5-flash'}\n`));
 
   const spinner = ora('Membuat UAC dengan Google Gemini…').start();
+  let markdown: string;
+  let mdPath: string;
+  let title: string;
   try {
-    const markdown = await generateUAC({ input, lang, model: opts.model });
-    const result   = await saveUAC(markdown, outDir, fileTimestamp());
-    spinner.succeed(chalk.green(`UAC berhasil dibuat: ${result.title}`));
-    console.log(chalk.cyan('  File: ') + chalk.underline(result.filePath) + '\n');
+    markdown   = await generateUAC({ input, lang, model: opts.model });
+    const result = await saveUAC(markdown, outDir, fileTimestamp());
+    mdPath = result.filePath;
+    title  = result.title;
+    spinner.succeed(chalk.green(`UAC berhasil dibuat: ${title}`));
+    console.log(chalk.cyan('  Markdown: ') + chalk.underline(mdPath));
   } catch (err) {
     spinner.fail('Gagal: ' + (err as Error).message);
+    return;
+  }
+
+  // ── Build a bulk-compatible JIRA ticket template (JSON) ──
+  let issuetype = opts.type ?? '';
+  if (!issuetype) {
+    const r = await prompts({
+      type: 'select', name: 'issuetype',
+      message: 'Issue type untuk template tiket JIRA:',
+      choices: ['Story', 'Task', 'Bug', 'Epic'].map(v => ({ title: v, value: v })),
+    });
+    issuetype = r.issuetype ?? 'Story'; // default if the prompt is skipped/cancelled
+  }
+
+  const projectKey = opts.project ?? process.env.JIRA_PROJECT_KEY ?? 'ENG';
+  const ticket     = buildTicketTemplate(markdown, { issuetype, projectKey });
+
+  try {
+    const jsonPath = await saveTicketTemplate(ticket, mdPath);
+    console.log(chalk.cyan('  Template: ') + chalk.underline(jsonPath) +
+      chalk.gray(`  (issuetype: ${issuetype}, project: ${projectKey})`));
+    console.log(chalk.gray('\n  Buat tiket dari template ini:'));
+    console.log('  ' + chalk.bold(`npx ts-node src/index.ts bulk ${jsonPath}`) + '\n');
+  } catch (err) {
+    console.error(chalk.red('  Gagal menyimpan template JSON: ' + (err as Error).message + '\n'));
   }
 }
 
@@ -389,9 +419,11 @@ program.command('uac [text...]')
   .description('Buat User Acceptance Criteria (UAC) dari teks/markdown via Google Gemini')
   .option('-f, --file <path>', 'Baca requirement dari file .md atau .txt')
   .option('-t, --text <text>', 'Requirement sebagai teks langsung')
-  .option('-o, --out-dir <dir>', `Folder output markdown (default: ${DEFAULT_OUTPUT_DIR})`)
+  .option('-o, --out-dir <dir>', `Folder output markdown + template JSON (default: ${DEFAULT_OUTPUT_DIR})`)
   .option('-m, --model <model>', 'Override model Gemini (default dari GEMINI_MODEL)')
   .option('-l, --lang <lang>', 'Bahasa output: en | id (default: en)')
+  .option('-p, --project <key>', 'JIRA project key untuk template tiket (override .env)')
+  .option('--type <type>', 'Issue type untuk template tiket (skip prompt): Story|Task|Bug|Epic')
   .action(cmdUac);
 
 program.parse();

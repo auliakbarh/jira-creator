@@ -2,6 +2,8 @@
 
 Buat tiket JIRA dari CLI — **gratis, tanpa AI, hanya butuh JIRA API token**.
 
+> 📖 Butuh panduan lengkap setiap command beserta fungsi & flag-nya? Lihat **[GUIDE.md](GUIDE.md)**.
+
 ---
 
 ## ✅ Prerequisite
@@ -48,6 +50,8 @@ GEMINI_MODEL=gemini-2.5-flash
 
 ## 🎮 Perintah CLI
 
+> Penjelasan detail tiap command (argumen, semua flag, contoh, troubleshooting) ada di **[GUIDE.md](GUIDE.md)**.
+
 ### Cek koneksi
 ```bash
 npx ts-node src/index.ts whoami
@@ -93,8 +97,17 @@ Menghasilkan deskripsi tiket JIRA berisi UAC dari requirement berupa **teks** at
 **file markdown**. Output mengikuti template `claude-planning/JIRA-TICKET-DESCRIPTION-TEMPLATE.md`:
 judul `[feature][sub] short description`, blok Description (link Figma/PRD/Postman/API), dan
 skenario UAC bernomor dalam format Gherkin GIVEN/WHEN/THEN (huruf besar), lengkap dengan
-tabel copy `| EN | ID |` dan placeholder gambar Figma. Hasilnya disimpan sebagai file `.md`
-di folder `output-uac/`.
+tabel copy `| EN | ID |` dan placeholder gambar Figma.
+
+Setiap run menghasilkan **dua file** di `output-uac/` (basename sama):
+
+- `<slug>-<timestamp>.md` — UAC dalam markdown.
+- `<slug>-<timestamp>.json` — **template tiket JIRA** (`summary` = judul, `description` =
+  isi UAC, `issuetype`, `projectKey`, `labels: ["uac"]`). File ini langsung bisa dipakai
+  oleh command `bulk` untuk membuat tiket.
+
+Saat run, kamu akan ditanya **issue type** (Story/Task/Bug/Epic) untuk dimasukkan ke
+template (atau lewati prompt dengan flag `--type`).
 
 ```bash
 # Dari file markdown / teks
@@ -109,13 +122,20 @@ npx ts-node src/index.ts uac "Fitur reset password via email"
 # Tanpa argumen → mode interaktif (paste teks / pilih file)
 npx ts-node src/index.ts uac
 
-# Output bahasa Inggris + folder & model kustom
-npx ts-node src/index.ts uac -f input/sample-feature.md -l en -o docs/uac -m gemini-2.5-pro
+# Skip prompt issue type + bahasa Indonesia + project & model kustom
+npx ts-node src/index.ts uac -f input/sample-feature.md --type Story -l id -p DEV -m gemini-2.5-pro
+
+# Lalu buat tiketnya dari template JSON yang dihasilkan:
+npx ts-node src/index.ts bulk output-uac/<slug>-<timestamp>.json
 ```
 
 > Butuh `GEMINI_API_KEY` di `.env`. Dapatkan di
-> <https://aistudio.google.com/app/apikey>. Command ini **tidak** membutuhkan
-> kredensial JIRA dan **tidak** membuat tiket — hanya menghasilkan file markdown.
+> <https://aistudio.google.com/app/apikey>. Command `uac` sendiri **tidak** membutuhkan
+> kredensial JIRA dan **tidak** membuat tiket — ia menghasilkan file markdown + template
+> JSON. Pembuatan tiket dilakukan terpisah lewat `bulk` (butuh kredensial JIRA).
+>
+> Heading, tabel `| EN | ID |`, link, dan bullet di `description` akan ter-render dengan
+> benar di JIRA — `toADF` mengonversi markdown tersebut ke Atlassian Document Format.
 
 ---
 
@@ -164,6 +184,8 @@ node dist/index.js whoami
 | `-o, --output <file>` | bulk | Simpan hasil ke file JSON |
 | `-f, --file <path>` | uac | Baca requirement dari file `.md`/`.txt` |
 | `-t, --text <text>` | uac | Requirement sebagai teks langsung |
-| `-o, --out-dir <dir>` | uac | Folder output UAC (default `output-uac`) |
-| `-l, --lang <id\|en>` | uac | Bahasa output UAC (default `id`) |
+| `-o, --out-dir <dir>` | uac | Folder output `.md` + `.json` (default `output-uac`) |
+| `-l, --lang <en\|id>` | uac | Bahasa output UAC (default `en`) |
 | `-m, --model <model>` | uac | Override model Gemini |
+| `-p, --project <key>` | uac | Project key untuk template tiket (override .env) |
+| `--type <type>` | uac | Issue type template tiket (skip prompt): Story\|Task\|Bug\|Epic |

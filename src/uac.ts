@@ -1,7 +1,7 @@
 import { writeFile, mkdir, readFile } from 'fs/promises';
 import path from 'path';
 import { generateContent } from './gemini-client';
-import { UACOptions, UACResult } from './types';
+import { UACOptions, UACResult, TicketInput } from './types';
 
 export const DEFAULT_OUTPUT_DIR = 'output-uac';
 
@@ -140,4 +140,47 @@ export async function saveUAC(markdown: string, outDir: string, timestamp: strin
 
   await writeFile(filePath, markdown + '\n', 'utf-8');
   return { filePath, fileName, title: extractTitle(markdown) };
+}
+
+// ─── Split the UAC markdown into a JIRA summary + description ─────────────────
+// The first `# ` heading is the ticket title (the `[feature][sub] …` line). The
+// JIRA summary is that line's text; the description is everything after it.
+export function splitUAC(markdown: string): { summary: string; description: string } {
+  const lines = markdown.split('\n');
+  const idx   = lines.findIndex(l => /^#\s+/.test(l));
+
+  if (idx === -1) {
+    const first = lines.find(l => l.trim()) ?? 'UAC';
+    return { summary: first.trim().slice(0, 255), description: markdown.trim() };
+  }
+
+  const summary     = lines[idx].replace(/^#\s+/, '').trim().slice(0, 255);
+  const description = lines.slice(idx + 1).join('\n').trim();
+  return { summary, description };
+}
+
+// ─── Build a JIRA ticket template (bulk-compatible) from the UAC markdown ─────
+export function buildTicketTemplate(
+  markdown: string,
+  opts: { issuetype: string; priority?: string; projectKey?: string }
+): TicketInput {
+  const { summary, description } = splitUAC(markdown);
+
+  const ticket: TicketInput = {
+    summary,
+    description,
+    issuetype: opts.issuetype,
+    labels: ['uac'],
+  };
+  if (opts.priority)   ticket.priority   = opts.priority;
+  if (opts.projectKey) ticket.projectKey = opts.projectKey;
+  return ticket;
+}
+
+// ─── Persist the ticket template as JSON next to the .md (same basename) ─────
+// The result is consumable directly by `bulk <file.json>`.
+export async function saveTicketTemplate(ticket: TicketInput, mdFilePath: string): Promise<string> {
+  const jsonPath = mdFilePath.replace(/\.md$/, '.json');
+  await writeFile(jsonPath, JSON.stringify(ticket, null, 2) + '\n', 'utf-8');
+  return jsonPath;
 }
