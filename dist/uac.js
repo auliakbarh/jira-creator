@@ -15,7 +15,7 @@ exports.buildTicketTemplate = buildTicketTemplate;
 exports.saveTicketTemplate = saveTicketTemplate;
 const promises_1 = require("fs/promises");
 const path_1 = __importDefault(require("path"));
-const gemini_client_1 = require("./gemini-client");
+const ai_1 = require("./ai");
 exports.DEFAULT_OUTPUT_DIR = 'output-uac';
 // ─── Prompt builder ───────────────────────────────────────────────────────────
 // Instructs Gemini to turn a feature/requirement into a JIRA ticket description
@@ -114,7 +114,7 @@ async function generateUAC(opts) {
     if (!input)
         throw new Error('Input kosong — berikan teks atau file yang berisi requirement.');
     const prompt = buildUACPrompt(input, opts.lang ?? 'en');
-    let markdown = await (0, gemini_client_1.generateContent)(prompt, opts.model);
+    let markdown = await (0, ai_1.generateText)(prompt, { provider: opts.provider ?? 'gemini', model: opts.model });
     // Strip an accidental wrapping ```markdown fence if the model adds one.
     markdown = markdown.replace(/^```(?:markdown|md)?\s*\n/, '').replace(/\n```\s*$/, '').trim();
     return tidyMarkdown(markdown);

@@ -14,6 +14,7 @@ const file_reader_1 = require("./file-reader");
 const templates_1 = require("./templates");
 const uac_1 = require("./uac");
 const epic_1 = require("./epic");
+const ai_1 = require("./ai");
 // ─── Guard: check required env vars ──────────────────────────────────────────
 function checkEnv() {
     const missing = ['JIRA_BASE_URL', 'JIRA_EMAIL', 'JIRA_API_TOKEN'].filter(k => !process.env[k]);
@@ -23,12 +24,18 @@ function checkEnv() {
         process.exit(1);
     }
 }
-// ─── Guard: Gemini env (only the UAC command needs this) ─────────────────────
-function checkGeminiEnv() {
-    if (!process.env.GEMINI_API_KEY) {
-        console.error(chalk_1.default.red('\n✖ Missing environment variable: GEMINI_API_KEY'));
-        console.error(chalk_1.default.gray('  Dapatkan API key di: https://aistudio.google.com/app/apikey'));
-        console.error(chalk_1.default.gray('  Lalu isi GEMINI_API_KEY di file .env\n'));
+// ─── Guard: AI provider env (uac & epic commands) ────────────────────────────
+function checkAIEnv(provider) {
+    const varName = (0, ai_1.providerEnvVar)(provider);
+    if (!process.env[varName]) {
+        console.error(chalk_1.default.red(`\n✖ Missing environment variable: ${varName}`));
+        if (provider === 'claude') {
+            console.error(chalk_1.default.gray('  Dapatkan API key di: https://console.anthropic.com/settings/keys'));
+        }
+        else {
+            console.error(chalk_1.default.gray('  Dapatkan API key di: https://aistudio.google.com/app/apikey'));
+        }
+        console.error(chalk_1.default.gray(`  Lalu isi ${varName} di file .env\n`));
         process.exit(1);
     }
 }
@@ -263,7 +270,8 @@ async function cmdBulk(filePath, opts) {
 }
 // ─── Command: uac (generate User Acceptance Criteria via Gemini) ─────────────
 async function cmdUac(textArgs, opts) {
-    checkGeminiEnv();
+    const provider = (0, ai_1.resolveProvider)(opts.provider);
+    checkAIEnv(provider);
     header();
     // Resolve the requirement input: --file > --text > positional args > prompt.
     let input;
@@ -329,13 +337,13 @@ async function cmdUac(textArgs, opts) {
     }
     const lang = opts.lang ?? 'en';
     const outDir = opts.outDir ?? uac_1.DEFAULT_OUTPUT_DIR;
-    console.log(chalk_1.default.gray(`Sumber: ${source}  •  Bahasa: ${lang}  •  Model: ${opts.model ?? process.env.GEMINI_MODEL ?? 'gemini-2.5-flash'}\n`));
-    const spinner = (0, ora_1.default)('Membuat UAC dengan Google Gemini…').start();
+    console.log(chalk_1.default.gray(`Sumber: ${source}  •  Bahasa: ${lang}  •  Provider: ${provider}  •  Model: ${(0, ai_1.modelLabel)(provider, opts.model)}\n`));
+    const spinner = (0, ora_1.default)(`Membuat UAC dengan ${provider === 'claude' ? 'Anthropic Claude' : 'Google Gemini'}…`).start();
     let markdown;
     let mdPath;
     let title;
     try {
-        markdown = await (0, uac_1.generateUAC)({ input, lang, model: opts.model });
+        markdown = await (0, uac_1.generateUAC)({ input, lang, model: opts.model, provider });
         const result = await (0, uac_1.saveUAC)(markdown, outDir, fileTimestamp());
         mdPath = result.filePath;
         title = result.title;
@@ -371,7 +379,8 @@ async function cmdUac(textArgs, opts) {
 }
 // ─── Command: epic (create Epic + Gemini breakdown of child tasks) ───────────
 async function cmdEpic(textArgs, opts) {
-    checkGeminiEnv();
+    const provider = (0, ai_1.resolveProvider)(opts.provider);
+    checkAIEnv(provider);
     if (!opts.dryRun)
         checkEnv(); // creating tickets needs JIRA creds; dry-run does not
     header();
@@ -413,12 +422,12 @@ async function cmdEpic(textArgs, opts) {
     const lang = opts.lang ?? 'en';
     const outDir = opts.outDir ?? epic_1.DEFAULT_EPIC_OUTPUT_DIR;
     const projectKey = opts.project ?? process.env.JIRA_PROJECT_KEY ?? 'ENG';
-    console.log(chalk_1.default.gray(`Sumber: ${source}  •  Bahasa: ${lang}  •  Project: ${projectKey}  •  Model: ${opts.model ?? process.env.GEMINI_MODEL ?? 'gemini-2.5-flash'}\n`));
-    // 1. Generate the breakdown with Gemini.
-    const spinner = (0, ora_1.default)('Membreakdown epic dengan Google Gemini…').start();
+    console.log(chalk_1.default.gray(`Sumber: ${source}  •  Bahasa: ${lang}  •  Project: ${projectKey}  •  Provider: ${provider}  •  Model: ${(0, ai_1.modelLabel)(provider, opts.model)}\n`));
+    // 1. Generate the breakdown via the selected AI provider.
+    const spinner = (0, ora_1.default)(`Membreakdown epic dengan ${provider === 'claude' ? 'Anthropic Claude' : 'Google Gemini'}…`).start();
     let breakdown;
     try {
-        breakdown = await (0, epic_1.generateBreakdown)(input, { lang, model: opts.model });
+        breakdown = await (0, epic_1.generateBreakdown)(input, { lang, model: opts.model, provider });
         spinner.succeed(chalk_1.default.green(`Breakdown selesai: 1 epic + ${breakdown.tasks.length} task`));
     }
     catch (err) {
@@ -526,7 +535,8 @@ commander_1.program.command('uac [text...]')
     .option('-f, --file <path>', 'Baca requirement dari file .md atau .txt')
     .option('-t, --text <text>', 'Requirement sebagai teks langsung')
     .option('-o, --out-dir <dir>', `Folder output markdown + template JSON (default: ${uac_1.DEFAULT_OUTPUT_DIR})`)
-    .option('-m, --model <model>', 'Override model Gemini (default dari GEMINI_MODEL)')
+    .option('--provider <name>', 'AI provider: gemini | claude (default: gemini, atau AI_PROVIDER)')
+    .option('-m, --model <model>', 'Override model AI (default dari provider)')
     .option('-l, --lang <lang>', 'Bahasa output: en | id (default: en)')
     .option('-p, --project <key>', 'JIRA project key untuk template tiket (override .env)')
     .option('--type <type>', 'Issue type untuk template tiket (skip prompt): Story|Task|Bug|Epic')
@@ -536,7 +546,8 @@ commander_1.program.command('epic [text...]')
     .option('-f, --file <path>', 'Baca deskripsi epic dari file .md atau .txt')
     .option('-t, --text <text>', 'Deskripsi epic sebagai teks langsung')
     .option('-o, --out-dir <dir>', `Folder simpan rencana breakdown JSON (default: ${epic_1.DEFAULT_EPIC_OUTPUT_DIR})`)
-    .option('-m, --model <model>', 'Override model Gemini (default dari GEMINI_MODEL)')
+    .option('--provider <name>', 'AI provider: gemini | claude (default: gemini, atau AI_PROVIDER)')
+    .option('-m, --model <model>', 'Override model AI (default dari provider)')
     .option('-l, --lang <lang>', 'Bahasa output: en | id (default: en)')
     .option('-p, --project <key>', 'JIRA project key (override .env)')
     .option('--dry-run', 'Hanya generate & simpan rencana; jangan buat tiket di JIRA')

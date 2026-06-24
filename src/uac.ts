@@ -1,6 +1,6 @@
 import { writeFile, mkdir, readFile } from 'fs/promises';
 import path from 'path';
-import { generateContent } from './gemini-client';
+import { generateText } from './ai';
 import { UACOptions, UACResult, TicketInput } from './types';
 
 export const DEFAULT_OUTPUT_DIR = 'output-uac';
@@ -109,7 +109,7 @@ export async function generateUAC(opts: UACOptions): Promise<string> {
   if (!input) throw new Error('Input kosong — berikan teks atau file yang berisi requirement.');
 
   const prompt = buildUACPrompt(input, opts.lang ?? 'en');
-  let markdown = await generateContent(prompt, opts.model);
+  let markdown = await generateText(prompt, { provider: opts.provider ?? 'gemini', model: opts.model });
 
   // Strip an accidental wrapping ```markdown fence if the model adds one.
   markdown = markdown.replace(/^```(?:markdown|md)?\s*\n/, '').replace(/\n```\s*$/, '').trim();

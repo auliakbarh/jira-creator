@@ -14,7 +14,8 @@ Buat tiket JIRA dari CLI — **gratis, tanpa AI, hanya butuh JIRA API token**.
 | JIRA Cloud | Akun dengan akses ke project |
 | JIRA API Token | [Buat di sini](https://id.atlassian.com/manage-profile/security/api-tokens) |
 
-> Tidak perlu Anthropic API key, tidak perlu billing tambahan.
+> Pembuatan tiket inti tidak butuh AI sama sekali. Hanya command `uac` & `epic` yang
+> butuh API key AI (Google Gemini **atau** Anthropic Claude — pilih salah satu).
 
 ---
 
@@ -35,9 +36,12 @@ JIRA_EMAIL=kamu@perusahaan.com
 JIRA_API_TOKEN=xxxxxxxxxxxxxxxxxxxxxxxx
 JIRA_PROJECT_KEY=ENG
 
-# Opsional — hanya untuk command `uac`
+# Opsional — untuk command `uac` & `epic` (pilih salah satu provider AI)
+AI_PROVIDER=gemini            # gemini (default) | claude
 GEMINI_API_KEY=xxxxxxxxxxxxxxxxxxxxxxxx
 GEMINI_MODEL=gemini-2.5-flash
+ANTHROPIC_API_KEY=xxxxxxxxxxxxxxxxxxxxxxxx
+ANTHROPIC_MODEL=claude-opus-4-8
 ```
 
 **Cara dapat API token JIRA:**
@@ -91,7 +95,7 @@ npx ts-node src/index.ts bulk input/sample.json
 npx ts-node src/index.ts bulk input/sample.csv --project DEV --output output/results.json
 ```
 
-### Buat UAC (User Acceptance Criteria) dengan Google Gemini
+### Buat UAC (User Acceptance Criteria) dengan AI
 
 Menghasilkan deskripsi tiket JIRA berisi UAC dari requirement berupa **teks** atau
 **file markdown**. Output mengikuti template `claude-planning/JIRA-TICKET-DESCRIPTION-TEMPLATE.md`:
@@ -129,17 +133,17 @@ npx ts-node src/index.ts uac -f input/sample-feature.md --type Story -l id -p DE
 npx ts-node src/index.ts bulk output-uac/<slug>-<timestamp>.json
 ```
 
-> Butuh `GEMINI_API_KEY` di `.env`. Dapatkan di
-> <https://aistudio.google.com/app/apikey>. Command `uac` sendiri **tidak** membutuhkan
+> Butuh API key provider AI (`GEMINI_API_KEY` atau `ANTHROPIC_API_KEY`) di `.env` — lihat
+> bagian **Pilih AI provider** di bawah. Command `uac` sendiri **tidak** membutuhkan
 > kredensial JIRA dan **tidak** membuat tiket — ia menghasilkan file markdown + template
 > JSON. Pembuatan tiket dilakukan terpisah lewat `bulk` (butuh kredensial JIRA).
 >
 > Heading, tabel `| EN | ID |`, link, dan bullet di `description` akan ter-render dengan
 > benar di JIRA — `toADF` mengonversi markdown tersebut ke Atlassian Document Format.
 
-### Buat Epic + breakdown task otomatis (Google Gemini)
+### Buat Epic + breakdown task otomatis (AI)
 
-Dari satu deskripsi epic, Gemini memecahnya menjadi beberapa child task, lalu command
+Dari satu deskripsi epic, AI provider memecahnya menjadi beberapa child task, lalu command
 membuat **Epic + semua task-nya sekaligus** di JIRA (tiap task ditautkan ke epic via field
 `parent`).
 
@@ -156,12 +160,33 @@ npx ts-node src/index.ts epic -t "..." --dry-run
 
 Alur: generate breakdown → preview epic + daftar task → simpan rencana ke
 `output-uac/epic-<slug>-<timestamp>.json` → (kecuali `--dry-run`) konfirmasi → buat epic →
-buat semua task tertaut ke epic. Butuh `GEMINI_API_KEY` **dan** kredensial JIRA (kecuali
-`--dry-run` yang hanya butuh Gemini).
+buat semua task tertaut ke epic. Butuh API key provider AI **dan** kredensial JIRA (kecuali
+`--dry-run` yang hanya butuh API key AI). Pakai `--provider claude` untuk memakai Claude.
 
 > Penautan epic memakai field `parent`. Pada sebagian project company-managed lama, relasi
 > epic–task mungkin perlu "Epic Link" custom field — jika semua task gagal di field
 > `parent`, cek tipe project JIRA-mu.
+
+### Pilih AI provider: Gemini atau Claude
+
+Command `uac` dan `epic` bisa pakai **Google Gemini** (default) atau **Anthropic Claude**.
+Pilih lewat flag `--provider` atau env `AI_PROVIDER`.
+
+```bash
+# Default → Gemini (butuh GEMINI_API_KEY)
+npx ts-node src/index.ts uac -f input/feature.md
+
+# Pakai Claude (butuh ANTHROPIC_API_KEY)
+npx ts-node src/index.ts uac -f input/feature.md --provider claude
+npx ts-node src/index.ts epic -f input/epic.md --provider claude --dry-run
+
+# Atau set default di .env: AI_PROVIDER=claude
+```
+
+| Provider | Env wajib | Model default (override `-m`) |
+|---|---|---|
+| `gemini` | `GEMINI_API_KEY` | `gemini-2.5-flash` (`GEMINI_MODEL`) |
+| `claude` | `ANTHROPIC_API_KEY` | `claude-opus-4-8` (`ANTHROPIC_MODEL`) |
 
 ---
 
@@ -208,17 +233,18 @@ node dist/index.js whoami
 |---|---|---|
 | `-p, --project <key>` | create, template, bulk | Override project key dari .env |
 | `-o, --output <file>` | bulk | Simpan hasil ke file JSON |
+| `--provider <name>` | uac, epic | AI provider: `gemini` (default) \| `claude` (atau `AI_PROVIDER`) |
 | `-f, --file <path>` | uac | Baca requirement dari file `.md`/`.txt` |
 | `-t, --text <text>` | uac | Requirement sebagai teks langsung |
 | `-o, --out-dir <dir>` | uac | Folder output `.md` + `.json` (default `output-uac`) |
 | `-l, --lang <en\|id>` | uac | Bahasa output UAC (default `en`) |
-| `-m, --model <model>` | uac | Override model Gemini |
+| `-m, --model <model>` | uac | Override model AI (default per provider) |
 | `-p, --project <key>` | uac | Project key untuk template tiket (override .env) |
 | `--type <type>` | uac | Issue type template tiket (skip prompt): Story\|Task\|Bug\|Epic |
 | `-f, --file <path>` | epic | Baca deskripsi epic dari file `.md`/`.txt` |
 | `-t, --text <text>` | epic | Deskripsi epic sebagai teks langsung |
 | `-o, --out-dir <dir>` | epic | Folder simpan rencana breakdown JSON (default `output-uac`) |
 | `-l, --lang <en\|id>` | epic | Bahasa output (default `en`) |
-| `-m, --model <model>` | epic | Override model Gemini |
+| `-m, --model <model>` | epic | Override model AI (default per provider) |
 | `-p, --project <key>` | epic | Project key (override .env) |
 | `--dry-run` | epic | Hanya generate & simpan rencana; tidak membuat tiket |

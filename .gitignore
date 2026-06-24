@@ -16,5 +16,6 @@ input/*
 !input/sample-feature.md
 output-uac/*
 !output-uac/.gitkeep
+done/
 
 node_modules/

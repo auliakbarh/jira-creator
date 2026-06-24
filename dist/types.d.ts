@@ -35,6 +35,7 @@ export interface JiraIssueType {
     name: string;
     description: string;
 }
+export type Provider = 'gemini' | 'claude';
 export interface GeminiResponse {
     candidates?: Array<{
         content?: {
@@ -57,6 +58,7 @@ export interface UACOptions {
     input: string;
     lang?: string;
     model?: string;
+    provider?: Provider;
 }
 export interface UACResult {
     filePath: string;

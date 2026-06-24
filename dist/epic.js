@@ -9,28 +9,33 @@ exports.generateBreakdown = generateBreakdown;
 exports.saveBreakdownPlan = saveBreakdownPlan;
 const promises_1 = require("fs/promises");
 const path_1 = __importDefault(require("path"));
-const gemini_client_1 = require("./gemini-client");
+const ai_1 = require("./ai");
 exports.DEFAULT_EPIC_OUTPUT_DIR = 'output-uac';
-// JSON schema enforced on the Gemini response (OpenAPI subset used by Gemini).
+// Standard JSON Schema enforced on the response. The Gemini client converts this
+// to Gemini's responseSchema shape; the Claude client uses it as-is for
+// structured outputs.
 const BREAKDOWN_SCHEMA = {
-    type: 'OBJECT',
+    type: 'object',
+    additionalProperties: false,
     properties: {
         epic: {
-            type: 'OBJECT',
+            type: 'object',
+            additionalProperties: false,
             properties: {
-                summary: { type: 'STRING' },
-                description: { type: 'STRING' },
+                summary: { type: 'string' },
+                description: { type: 'string' },
             },
             required: ['summary', 'description'],
         },
         tasks: {
-            type: 'ARRAY',
+            type: 'array',
             items: {
-                type: 'OBJECT',
+                type: 'object',
+                additionalProperties: false,
                 properties: {
-                    summary: { type: 'STRING' },
-                    description: { type: 'STRING' },
-                    issuetype: { type: 'STRING', enum: ['Story', 'Task'] },
+                    summary: { type: 'string' },
+                    description: { type: 'string' },
+                    issuetype: { type: 'string', enum: ['Story', 'Task'] },
                 },
                 required: ['summary', 'description', 'issuetype'],
             },
@@ -67,13 +72,17 @@ function buildBreakdownPrompt(input, lang) {
         '--- EPIC INPUT END ---',
     ].join('\n');
 }
-// ─── Generate the breakdown via Gemini (structured JSON) ─────────────────────
+// ─── Generate the breakdown (structured JSON, provider-agnostic) ─────────────
 async function generateBreakdown(input, opts = {}) {
     const text = input.trim();
     if (!text)
         throw new Error('Input kosong — berikan deskripsi epic.');
     const prompt = buildBreakdownPrompt(text, opts.lang ?? 'en');
-    const result = await (0, gemini_client_1.generateJSON)(prompt, opts.model, BREAKDOWN_SCHEMA);
+    const result = await (0, ai_1.generateJSON)(prompt, {
+        provider: opts.provider ?? 'gemini',
+        model: opts.model,
+        schema: BREAKDOWN_SCHEMA,
+    });
     if (!result?.epic?.summary || !Array.isArray(result.tasks) || result.tasks.length === 0) {
         throw new Error('Gemini tidak mengembalikan epic + tasks yang valid.');
     }

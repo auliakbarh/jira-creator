@@ -17,6 +17,7 @@
     "list-types": "ts-node src/index.ts list-types"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.105.0",
     "chalk": "4.1.2",
     "commander": "^12.1.0",
     "csv-parse": "^5.5.6",

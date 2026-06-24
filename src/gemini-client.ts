@@ -71,12 +71,34 @@ export async function generateContent(
   throw lastError ?? new Error('Gemini request failed');
 }
 
+// Convert a standard JSON Schema (lowercase types, additionalProperties) into
+// Gemini's responseSchema shape (uppercase `type` enum, no additionalProperties).
+function toGeminiSchema(node: unknown): unknown {
+  if (Array.isArray(node)) return node.map(toGeminiSchema);
+  if (node && typeof node === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(node as Record<string, unknown>)) {
+      if (k === 'additionalProperties') continue;
+      if (k === 'type' && typeof v === 'string') out.type = v.toUpperCase();
+      else if (k === 'properties' && v && typeof v === 'object') {
+        const props: Record<string, unknown> = {};
+        for (const [pk, pv] of Object.entries(v as Record<string, unknown>)) props[pk] = toGeminiSchema(pv);
+        out.properties = props;
+      } else if (k === 'items') out.items = toGeminiSchema(v);
+      else out[k] = v; // enum, required, description, etc.
+    }
+    return out;
+  }
+  return node;
+}
+
 // ─── Structured JSON output ──────────────────────────────────────────────────
 // Forces `responseMimeType: application/json` (plus an optional responseSchema) so
-// Gemini returns parseable JSON. Strips an accidental ```json fence just in case.
+// Gemini returns parseable JSON. `schema` is a standard JSON Schema, converted to
+// Gemini's shape here. Strips an accidental ```json fence just in case.
 export async function generateJSON<T>(prompt: string, model = MODEL(), schema?: object): Promise<T> {
   const config: Record<string, unknown> = { responseMimeType: 'application/json' };
-  if (schema) config.responseSchema = schema;
+  if (schema) config.responseSchema = toGeminiSchema(schema);
 
   const raw = await generateContent(prompt, model, config);
   const cleaned = raw.replace(/^```(?:json)?\s*\n/, '').replace(/\n```\s*$/, '').trim();

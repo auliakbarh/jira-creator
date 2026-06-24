@@ -25,13 +25,16 @@ The markdown follows the house JIRA ticket template
 (`claude-planning/JIRA-TICKET-DESCRIPTION-TEMPLATE.md`): a `[feature][sub] description`
 title, a Description block of resource links, and numbered uppercase Gherkin
 (GIVEN/WHEN/THEN) scenarios with optional EN/ID copy tables and Figma placeholders. `uac`
-needs a `GEMINI_API_KEY` but no JIRA credentials, and does not create the ticket itself —
+needs an AI provider key but no JIRA credentials, and does not create the ticket itself —
 feed the generated JSON to `bulk` to create it.
 
-The **`epic`** command goes one step further: given an epic description, Gemini breaks it
-into a set of child tasks, and the command creates the Epic plus all child issues (each
-linked to the epic) in a single run. It needs both `GEMINI_API_KEY` and JIRA credentials;
+The **`epic`** command goes one step further: given an epic description, the AI provider
+breaks it into a set of child tasks, and the command creates the Epic plus all child issues
+(each linked to the epic) in a single run. It needs an AI provider key and JIRA credentials;
 use `--dry-run` to preview/save the breakdown plan without creating anything.
+
+Both AI commands support a pluggable provider — **Google Gemini** (default) or **Anthropic
+Claude** — chosen with `--provider gemini|claude` or the `AI_PROVIDER` env var.
 
 ## Why It Exists
 
@@ -50,19 +53,21 @@ formatting through reusable templates.
 | `create [-p KEY]` | Create a single ticket interactively |
 | `template [-p KEY]` | Create a ticket from a structured template |
 | `bulk <file> [-p KEY] [-o out.json]` | Create many tickets from a file |
-| `uac [text] [-f file] [-l en\|id] [-o dir] [-m model] [-p KEY] [--type TYPE]` | Generate UAC via Google Gemini → `output-uac/<slug>.md` + `<slug>.json` ticket template |
-| `epic [text] [-f file] [-p KEY] [-m model] [-l en\|id] [--dry-run]` | Create an Epic + Gemini-generated breakdown of child tasks (linked to the epic) |
+| `uac [text] [-f file] [--provider gemini\|claude] [-l en\|id] [-o dir] [-m model] [-p KEY] [--type TYPE]` | Generate UAC via Gemini/Claude → `output-uac/<slug>.md` + `<slug>.json` ticket template |
+| `epic [text] [-f file] [--provider gemini\|claude] [-p KEY] [-m model] [-l en\|id] [--dry-run]` | Create an Epic + AI-generated breakdown of child tasks (linked to the epic) |
 
 **Flags:** `-p, --project <key>` overrides the default project; `-o, --output <file>`
 (bulk only) saves results to a JSON file. For `uac`: `-f/--file` reads the requirement
 from a `.md`/`.txt` file, `-t/--text` passes it inline, `-o/--out-dir` sets the output
-folder (default `output-uac`), `-l/--lang` picks the output language (`en` default / `id`),
-`-m/--model` overrides the Gemini model, `-p/--project` sets the template's project key, and
-`--type` sets the issue type (Story/Task/Bug/Epic) without the interactive prompt.
+folder (default `output-uac`), `--provider` selects `gemini`/`claude`, `-l/--lang` picks the
+output language (`en` default / `id`), `-m/--model` overrides the provider's default model,
+`-p/--project` sets the template's project key, and `--type` sets the issue type
+(Story/Task/Bug/Epic) without the interactive prompt. `epic` shares `--provider`, `-m`, `-l`,
+`-p`, `-f`/`-t`, `-o`, and adds `--dry-run`.
 
 ## How It Works
 
-The codebase is small and framework-free, split into eight single-responsibility modules
+The codebase is small and framework-free, split into ten single-responsibility modules
 under `src/`:
 
 - **`index.ts`** — CLI entry point. Defines all commands (`commander`) and owns every
@@ -76,13 +81,18 @@ under `src/`:
 - **`templates.ts`** — the registry of ticket templates. Each template declares its
   prompt fields and builds a consistently formatted summary and description.
 - **`file-reader.ts`** — parses and validates bulk input from CSV, JSON, and TXT files.
-- **`gemini-client.ts`** — a single `generateContent()` wrapper around the Google Gemini
-  REST API (used only by the `uac` command), mirroring the `jiraFetch` pattern.
+- **`ai.ts`** — provider dispatcher used by `uac` and `epic`. Resolves the provider
+  (`gemini` default, or `claude` via `--provider` / `AI_PROVIDER`) and routes `generateText`
+  / `generateJSON` to the right client, keeping those commands provider-agnostic.
+- **`gemini-client.ts`** — Google Gemini calls via raw `fetch` (mirrors `jiraFetch`),
+  including a standard-JSON-Schema → Gemini-`responseSchema` converter.
+- **`claude-client.ts`** — Anthropic Claude calls via the official `@anthropic-ai/sdk`
+  (text with adaptive thinking; structured-output JSON with a prompt-driven fallback).
 - **`uac.ts`** — builds the UAC prompt (which enforces the house JIRA ticket template),
-  calls Gemini, tidies the markdown spacing, and saves both the `.md` and a bulk-compatible
-  JSON ticket template (`splitUAC` → `buildTicketTemplate` → `saveTicketTemplate`) to
-  `output-uac/<title-slug>-<timestamp>.{md,json}`.
-- **`epic.ts`** — asks Gemini (via forced-JSON `generateJSON`) to break an epic into a set
+  calls the AI provider, tidies the markdown spacing, and saves both the `.md` and a
+  bulk-compatible JSON ticket template (`splitUAC` → `buildTicketTemplate` →
+  `saveTicketTemplate`) to `output-uac/<title-slug>-<timestamp>.{md,json}`.
+- **`epic.ts`** — asks the AI provider (forced/structured JSON) to break an epic into a set
   of child tasks, saves the plan, and feeds it to `createTicket`/`createTicketsBulk` so the
   epic and its linked children are created together.
 - **`types.ts`** — shared TypeScript interfaces.
@@ -126,8 +136,11 @@ Credentials and defaults are read from `.env`:
 | `JIRA_PROJECT_KEY` | — | Default project key (e.g. `ENG`) |
 | `JIRA_DEFAULT_ISSUE_TYPE` | — | Default issue type (e.g. `Task`) |
 | `JIRA_DEFAULT_PRIORITY` | — | Default priority (e.g. `Medium`) |
-| `GEMINI_API_KEY` | for `uac` | Google Gemini API key ([get one](https://aistudio.google.com/app/apikey)) |
+| `AI_PROVIDER` | — | Default AI provider for `uac`/`epic`: `gemini` (default) or `claude` |
+| `GEMINI_API_KEY` | for Gemini | Google Gemini API key ([get one](https://aistudio.google.com/app/apikey)) |
 | `GEMINI_MODEL` | — | Gemini model (default `gemini-2.5-flash`) |
+| `ANTHROPIC_API_KEY` | for Claude | Anthropic Claude API key ([get one](https://console.anthropic.com/settings/keys)) |
+| `ANTHROPIC_MODEL` | — | Claude model (default `claude-opus-4-8`) |
 
 ## Building for Production
 

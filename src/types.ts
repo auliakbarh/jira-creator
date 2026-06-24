@@ -42,6 +42,9 @@ export interface JiraIssueType {
   description: string;
 }
 
+// ─── AI provider selection ────────────────────────────────────────────────────
+export type Provider = 'gemini' | 'claude';
+
 // ─── Google Gemini ────────────────────────────────────────────────────────────
 export interface GeminiResponse {
   candidates?: Array<{
@@ -54,9 +57,10 @@ export interface GeminiResponse {
 
 // ─── UAC generation ─────────────────────────────────────────────────────────
 export interface UACOptions {
-  input: string;       // raw requirement text (from --text or a file)
-  lang?: string;       // 'id' (default) | 'en'
-  model?: string;      // override GEMINI_MODEL
+  input: string;        // raw requirement text (from --text or a file)
+  lang?: string;        // 'id' (default) | 'en'
+  model?: string;       // override the provider's default model
+  provider?: Provider;  // 'gemini' (default) | 'claude'
 }
 
 export interface UACResult {

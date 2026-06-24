@@ -56,13 +56,41 @@ async function generateContent(prompt, model = MODEL(), extraConfig = {}) {
     }
     throw lastError ?? new Error('Gemini request failed');
 }
+// Convert a standard JSON Schema (lowercase types, additionalProperties) into
+// Gemini's responseSchema shape (uppercase `type` enum, no additionalProperties).
+function toGeminiSchema(node) {
+    if (Array.isArray(node))
+        return node.map(toGeminiSchema);
+    if (node && typeof node === 'object') {
+        const out = {};
+        for (const [k, v] of Object.entries(node)) {
+            if (k === 'additionalProperties')
+                continue;
+            if (k === 'type' && typeof v === 'string')
+                out.type = v.toUpperCase();
+            else if (k === 'properties' && v && typeof v === 'object') {
+                const props = {};
+                for (const [pk, pv] of Object.entries(v))
+                    props[pk] = toGeminiSchema(pv);
+                out.properties = props;
+            }
+            else if (k === 'items')
+                out.items = toGeminiSchema(v);
+            else
+                out[k] = v; // enum, required, description, etc.
+        }
+        return out;
+    }
+    return node;
+}
 // ─── Structured JSON output ──────────────────────────────────────────────────
 // Forces `responseMimeType: application/json` (plus an optional responseSchema) so
-// Gemini returns parseable JSON. Strips an accidental ```json fence just in case.
+// Gemini returns parseable JSON. `schema` is a standard JSON Schema, converted to
+// Gemini's shape here. Strips an accidental ```json fence just in case.
 async function generateJSON(prompt, model = MODEL(), schema) {
     const config = { responseMimeType: 'application/json' };
     if (schema)
-        config.responseSchema = schema;
+        config.responseSchema = toGeminiSchema(schema);
     const raw = await generateContent(prompt, model, config);
     const cleaned = raw.replace(/^```(?:json)?\s*\n/, '').replace(/\n```\s*$/, '').trim();
     try {
