@@ -9,4 +9,12 @@ claude-outputs/
 contents/
 artifacts/
 
+# Example/generated inputs & outputs
+input/*
+!input/sample.csv
+!input/sample.json
+!input/sample-feature.md
+output-uac/*
+!output-uac/.gitkeep
+
 node_modules/
