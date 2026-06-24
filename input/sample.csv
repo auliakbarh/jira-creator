@@ -1,0 +1,6 @@
+summary,description,issuetype,priority,labels,components
+Login crash pada iOS Safari,User tidak bisa login di iPhone. Error: NullPointerException pada AuthController line 142,Bug,High,bug|ios|urgent,auth
+Tambah fitur dark mode,Pengguna meminta toggle dark mode di halaman settings,Story,Medium,feature|ux,frontend
+Upgrade PostgreSQL ke v16,Versi 14 sudah EOL per November 2024. Perlu upgrade sebelum support berakhir.,Task,High,infra|database,backend
+Optimasi query produk,Query list produk timeout jika ada lebih dari 50rb SKU. Perlu index dan pagination.,Bug,High,performance|database,backend
+Buat halaman onboarding,New user perlu guided onboarding setelah registrasi berhasil,Story,Medium,feature|onboarding,frontend

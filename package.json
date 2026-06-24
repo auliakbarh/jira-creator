@@ -1,0 +1,31 @@
+{
+  "name": "jira-creator",
+  "version": "1.0.0",
+  "description": "JIRA ticket creator — no AI required, just your API token",
+  "main": "dist/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts",
+    "create": "ts-node src/index.ts create",
+    "bulk": "ts-node src/index.ts bulk",
+    "template": "ts-node src/index.ts template",
+    "list-projects": "ts-node src/index.ts list-projects",
+    "list-types": "ts-node src/index.ts list-types"
+  },
+  "dependencies": {
+    "chalk": "4.1.2",
+    "commander": "^12.1.0",
+    "csv-parse": "^5.5.6",
+    "dotenv": "^16.4.5",
+    "ora": "5.4.1",
+    "prompts": "^2.4.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/prompts": "^2.4.9",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5"
+  }
+}

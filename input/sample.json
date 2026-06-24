@@ -1,0 +1,25 @@
+[
+  {
+    "summary": "Implementasi OAuth2 dengan Google",
+    "description": "Tambah Sign in with Google di halaman login dan registrasi. Harus bisa berjalan berdampingan dengan login email/password yang sudah ada.",
+    "issuetype": "Story",
+    "priority": "High",
+    "labels": ["feature", "auth"],
+    "components": ["backend", "frontend"]
+  },
+  {
+    "summary": "Setup monitoring dengan Datadog",
+    "description": "Integrasikan Datadog APM untuk monitoring performa aplikasi di production. Termasuk alert untuk error rate > 1% dan latency > 500ms.",
+    "issuetype": "Task",
+    "priority": "Medium",
+    "labels": ["infra", "monitoring"]
+  },
+  {
+    "summary": "Perbaiki broken email notification",
+    "description": "Email reset password tidak terkirim setelah migrasi SMTP ke SendGrid. Sudah dikonfirmasi oleh 15+ user.",
+    "issuetype": "Bug",
+    "priority": "Highest",
+    "labels": ["bug", "email", "urgent"],
+    "components": ["backend"]
+  }
+]
