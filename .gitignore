@@ -3,7 +3,9 @@
 .claude
 
 CLAUDE.md
+CLAUDE-rules.md
 claude-planning/
+claude-outputs/
 contents/
 
 node_modules/

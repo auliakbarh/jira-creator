@@ -1,0 +1,126 @@
+# JIRA Creator — Project Overview
+
+A TypeScript command-line tool for creating JIRA Cloud tickets directly through the
+JIRA REST API v3. No AI, no LLM, no extra billing — all it needs is a JIRA API token.
+
+## What It Does
+
+`jira-creator` lets you create JIRA issues from the terminal in three ways:
+
+1. **Interactively** — answer a few prompts to create a single ticket.
+2. **From templates** — guided, structured flows for common issue types
+   (Bug Report, User Story, Technical Task, Epic) that assemble well-formatted descriptions.
+3. **In bulk** — import many tickets at once from a `.csv`, `.json`, or `.txt` file,
+   with a preview and per-ticket success/failure reporting.
+
+It also includes helper commands to verify your credentials and inspect a project's
+metadata before you start creating.
+
+## Why It Exists
+
+Creating JIRA tickets through the web UI is slow and repetitive, especially for bulk
+work or for enforcing consistent ticket structure across a team. This tool keeps the
+workflow in the terminal, requires only a free JIRA API token, and standardizes ticket
+formatting through reusable templates.
+
+## Commands
+
+| Command | Description |
+|---|---|
+| `whoami` | Verify the connection and credentials (`GET /myself`) |
+| `list-projects` | List all visible JIRA projects |
+| `list-types <projectKey>` | List the issue types available in a project |
+| `create [-p KEY]` | Create a single ticket interactively |
+| `template [-p KEY]` | Create a ticket from a structured template |
+| `bulk <file> [-p KEY] [-o out.json]` | Create many tickets from a file |
+
+**Flags:** `-p, --project <key>` overrides the default project; `-o, --output <file>`
+(bulk only) saves results to a JSON file.
+
+## How It Works
+
+The codebase is small and framework-free, split into five single-responsibility modules
+under `src/`:
+
+- **`index.ts`** — CLI entry point. Defines all commands (`commander`) and owns every
+  piece of user-facing I/O: interactive prompts (`prompts`), spinners (`ora`), and
+  colored output (`chalk`). The other modules are pure logic.
+- **`jira-client.ts`** — all JIRA REST API calls, routed through a single `jiraFetch`
+  wrapper that handles Basic authentication and error unwrapping. Includes `toADF()`,
+  which converts plain text (with `**bold**` markdown) into the Atlassian Document
+  Format that the v3 API requires for issue descriptions.
+- **`templates.ts`** — the registry of ticket templates. Each template declares its
+  prompt fields and builds a consistently formatted summary and description.
+- **`file-reader.ts`** — parses and validates bulk input from CSV, JSON, and TXT files.
+- **`types.ts`** — shared TypeScript interfaces.
+
+Project key resolution is consistent across all commands: the `--project` flag wins,
+then the `JIRA_PROJECT_KEY` environment variable, then a fallback default.
+
+## Tech Stack
+
+- **Language:** TypeScript (strict mode), targeting Node.js 18+
+- **Runtime:** Node.js with native `fetch`
+- **Key libraries:** `commander` (CLI), `prompts` (interactive input), `chalk` & `ora`
+  (terminal UX), `csv-parse` (CSV parsing), `dotenv` (configuration)
+
+## Getting Started
+
+```bash
+# 1. Install dependencies
+npm install
+
+# 2. Configure credentials
+cp .env.example .env
+#    then edit .env with JIRA_BASE_URL, JIRA_EMAIL, and JIRA_API_TOKEN
+
+# 3. Verify the connection
+npx ts-node src/index.ts whoami
+```
+
+Get a JIRA API token at
+<https://id.atlassian.com/manage-profile/security/api-tokens>.
+
+### Configuration
+
+Credentials and defaults are read from `.env`:
+
+| Variable | Required | Description |
+|---|---|---|
+| `JIRA_BASE_URL` | ✅ | e.g. `https://your-domain.atlassian.net` |
+| `JIRA_EMAIL` | ✅ | Your Atlassian account email |
+| `JIRA_API_TOKEN` | ✅ | API token from the link above |
+| `JIRA_PROJECT_KEY` | — | Default project key (e.g. `ENG`) |
+| `JIRA_DEFAULT_ISSUE_TYPE` | — | Default issue type (e.g. `Task`) |
+| `JIRA_DEFAULT_PRIORITY` | — | Default priority (e.g. `Medium`) |
+
+## Building for Production
+
+```bash
+npm run build          # compiles src/ → dist/
+node dist/index.js whoami
+```
+
+## Input File Formats (Bulk)
+
+**CSV** — the `summary` column is required; `labels` and `components` are
+pipe-(`|`)-delimited:
+
+```csv
+summary,description,issuetype,priority,labels,components
+Login crash on iOS,User cannot log in...,Bug,High,bug|ios,auth
+```
+
+**JSON** — an array of ticket objects:
+
+```json
+[
+  {
+    "summary": "Implement Google OAuth2",
+    "issuetype": "Story",
+    "priority": "High",
+    "labels": ["feature", "auth"],
+    "components": ["backend"]
+  }
+]
+```
