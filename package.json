@@ -14,7 +14,9 @@
     "uac": "ts-node src/index.ts uac",
     "epic": "ts-node src/index.ts epic",
     "list-projects": "ts-node src/index.ts list-projects",
-    "list-types": "ts-node src/index.ts list-types"
+    "list-types": "ts-node src/index.ts list-types",
+    "bridge": "claude \"/jira-web\"",
+    "bridge:once": "claude -p --permission-mode acceptEdits \"/jira-web\""
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.105.0",

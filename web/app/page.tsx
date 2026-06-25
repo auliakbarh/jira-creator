@@ -36,6 +36,8 @@ export default function Home() {
   const [jobStatus, setJobStatus] = useState<string>('');
   const [inputTab, setInputTab] = useState<InputTab>('generate');
   const [pasteTab, setPasteTab] = useState<PasteTab>('json');
+  const [bridgeMsg, setBridgeMsg] = useState<string>('');
+  const [modalErr, setModalErr] = useState<string | null>(null);
   const [pasteText, setPasteText] = useState('');
   const [builderPlan, setBuilderPlan] = useState<EpicPlan>(emptyPlan());
   const [err, setErr] = useState<string | null>(null);
@@ -159,7 +161,7 @@ export default function Home() {
       requirement.trim() ||
       (inputTab === 'paste' && pasteText.trim()) ||
       (mode === 'epic' && inputTab === 'paste' && pasteTab === 'form' && builderPlan.epic.summary.trim());
-    if (!hasContent) { setErr('Belum ada isi untuk disimpan jadi draft.'); return; }
+    if (!hasContent) { setModalErr('Belum ada isi untuk disimpan jadi draft.'); return; }
 
     setSavingDraft(true); setErr(null);
     // Capture only the value relevant to the active input method, so a draft
@@ -194,14 +196,14 @@ export default function Home() {
       setDraftSaved(true); // show success modal
     } catch {
       setSavingDraft(false);
-      setErr('Gagal menyimpan draft.');
+      setModalErr('Gagal menyimpan draft.');
     }
   }
 
   // ── Submit a generation job for the Claude Code bridge to process ──
   async function generate() {
     setErr(null);
-    if (!requirement.trim()) { setErr('Isi requirement dulu.'); return; }
+    if (!requirement.trim()) { setModalErr('Requirement masih kosong. Isi dulu sebelum generate.'); return; }
     const r = await fetch('/api/jobs', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ mode, lang, projectKey, issuetype, requirement }),
@@ -212,6 +214,7 @@ export default function Home() {
     setStep('generating');
     setJobStatus('pending');
     startPolling(d.job.id);
+    triggerBridge();
   }
 
   // Poll a job until it finishes; the bridge (cron / terminal `/jira-web`) does the work.
@@ -242,6 +245,32 @@ export default function Home() {
     if (!d.ok) { setErr(d.error); return; }
     setJobStatus('pending');
     startPolling(jobId);
+    triggerBridge();
+  }
+
+  // Ask the local server to spawn `claude -p "/jira-web"` so the job is processed
+  // without opening a terminal. Best-effort: on failure, fall back to manual run.
+  async function triggerBridge() {
+    setBridgeMsg('Menjalankan Claude…');
+    try {
+      const r = await fetch('/api/bridge', { method: 'POST' });
+      const d = await r.json();
+      setBridgeMsg(d.ok ? (d.message || 'Claude dijalankan.') : (d.error || 'Gagal menjalankan Claude.'));
+    } catch {
+      setBridgeMsg('Tidak bisa menghubungi server bridge.');
+    }
+  }
+
+  // Cancel the running headless Claude bridge process.
+  async function cancelBridge() {
+    setBridgeMsg('Membatalkan bridge…');
+    try {
+      const r = await fetch('/api/bridge', { method: 'DELETE' });
+      const d = await r.json();
+      setBridgeMsg(d.message || 'Bridge dibatalkan.');
+    } catch {
+      setBridgeMsg('Gagal membatalkan bridge.');
+    }
   }
 
   // ── Manual input fallback (paste output, or build via form) ──
@@ -254,12 +283,13 @@ export default function Home() {
       } else if (pasteTab === 'form') {
         applyBuilder();
       } else {
+        if (!pasteText.trim()) throw new Error('Tempel JSON breakdown dulu.');
         const parsed = JSON.parse(pasteText.trim());
         if (!parsed.epic || !Array.isArray(parsed.tasks)) throw new Error('JSON harus punya { epic, tasks }.');
         recordHistory('epic', loadPlan(parsed));
       }
     } catch (e) {
-      setErr(`Gagal memproses: ${(e as Error).message}`);
+      setModalErr((e as Error).message);
     }
   }
 
@@ -301,7 +331,7 @@ export default function Home() {
       setDraftSaved(true); // show success modal
     } catch {
       setSavingDraft(false);
-      setErr('Gagal menyimpan draft.');
+      setModalErr('Gagal menyimpan draft.');
     }
   }
 
@@ -352,6 +382,7 @@ export default function Home() {
     setStep('input'); setUac(null); setPlan(null); setResult(null); setHistoryId(null);
     setRequirement(''); setPasteText(''); setInputTab('generate'); setPasteTab('json');
     setBuilderPlan(emptyPlan()); setJobId(null); setErr(null); setDraftSaved(false); setInputDraftId(null);
+    setBridgeMsg(''); setModalErr(null);
   }
 
   // ─────────────────────────── render ───────────────────────────
@@ -363,6 +394,21 @@ export default function Home() {
           onClose={() => setShowEnv(false)}
           onSaved={(c) => { setConfigured(isConfigured(c)); if (isConfigured(c)) setShowEnv(false); }}
         />
+      )}
+
+      {modalErr && (
+        <div className="modal-backdrop" onMouseDown={() => setModalErr(null)}>
+          <div className="modal" style={{ maxWidth: 420 }} onMouseDown={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <h2>⚠️ Tidak bisa lanjut</h2>
+              <button className="modal-x" onClick={() => setModalErr(null)} aria-label="Tutup">×</button>
+            </div>
+            <p>{modalErr}</p>
+            <div className="btn-row">
+              <button onClick={() => setModalErr(null)}>Mengerti</button>
+            </div>
+          </div>
+        </div>
       )}
 
       {draftSaved && (
@@ -513,14 +559,17 @@ export default function Home() {
           </h2>
           <p className="hint">Job <code className="mono">{jobId}</code> — status: <strong>{jobStatus}</strong></p>
           <div className={`alert ${jobStatus === 'error' ? 'warn' : 'info'}`}>
-            Pastikan sesi Claude Code menjalankan skill bridge. Di terminal Claude Code, jalankan:
-            <pre className="mono" style={{ marginTop: 8 }}>/jira-web</pre>
-            Skill memproses job ini di sesi (tanpa biaya API), lalu hasilnya muncul di sini otomatis.
-            Klik <strong>Trigger ulang Claude</strong> untuk mengantri ulang job ini (mis. jika tersangkut atau gagal).
+            Server menjalankan <code className="mono">claude -p "/jira-web"</code> otomatis untuk memproses
+            job ini (tanpa biaya API), lalu hasilnya muncul di sini. Kalau <code className="mono">claude</code> tidak
+            tersedia di server, jalankan manual di terminal: <code className="mono">/jira-web</code> (atau{' '}
+            <code className="mono">npm run bridge</code>).
+            Klik <strong>Trigger ulang Claude</strong> untuk mengantri & menjalankan ulang (mis. jika tersangkut atau gagal).
           </div>
+          {bridgeMsg && <p className="hint">⚙️ {bridgeMsg}</p>}
           <div className="btn-row">
             <button onClick={retryJob}>🔄 Trigger ulang Claude</button>
-            <button className="secondary" onClick={() => { if (poll.current) clearInterval(poll.current); reset(); }}>Batal</button>
+            <button className="secondary" onClick={cancelBridge}>⛔ Batalkan bridge</button>
+            <button className="secondary" onClick={() => { if (poll.current) clearInterval(poll.current); cancelBridge(); reset(); }}>Batal & kembali</button>
           </div>
         </div>
       )}

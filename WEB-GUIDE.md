@@ -12,6 +12,25 @@ Pilih salah satu:
 - **Server saja:** `npm run dev --prefix web` → buka **http://localhost:3939** (generate AI
   pakai tombol *Tempel hasil Claude manual*).
 
+## Prasyarat auto-trigger Claude (bridge)
+
+Saat klik **⚡ Generate** / **🔄 Trigger ulang Claude**, server menjalankan
+`claude -p "/jira-web"` otomatis untuk memproses job — **tanpa perlu buka terminal**. Syaratnya:
+
+1. **Web server jalan lokal** (`npm run dev --prefix web`) di mesin yang sama dengan Claude Code.
+   Auto-spawn pakai `child_process`, jadi tidak berfungsi di hosting remote.
+2. **CLI `claude` ada di PATH** server (cek: `claude --version`). Kalau tidak, tombol akan
+   memberi tahu — jalankan bridge manual: `/jira-web` di Claude Code atau `npm run bridge`.
+3. **Sesi Claude Code sudah login** (langganan). Pakai login langganan = **tanpa biaya API**.
+4. Spawn pakai `--permission-mode acceptEdits`; tool Write/Bash sudah di-allow lewat frontmatter
+   command `/jira-web`, jadi headless tidak minta konfirmasi.
+
+Trigger manual cross-platform (kalau auto-spawn tak tersedia):
+
+- mac/linux: `./bin/jira-web.sh` (`--once` untuk headless sekali jalan)
+- windows: `bin\jira-web.cmd` atau `.\bin\jira-web.ps1` (`-Once`)
+- npm: `npm run bridge` (interaktif) / `npm run bridge:once` (headless)
+
 ## Langkah 0 — Konfigurasi (sekali)
 
 1. Buka menu **Konfigurasi**.
@@ -40,8 +59,10 @@ Lalu:
 
 ## Langkah 2 — Generate
 
-- **⚡ Generate via Claude Code** → membuat *job*. Bila `/jira-web` aktif, hasilnya muncul
-  otomatis dalam beberapa detik. (Layar menampilkan status job.)
+- **⚡ Generate via Claude Code** → membuat *job*, lalu server otomatis menjalankan
+  `claude -p "/jira-web"` (lihat **Prasyarat auto-trigger** di atas). Hasil muncul otomatis
+  dalam beberapa detik; status job tampil di layar. Tombol **🔄 Trigger ulang Claude** mengantri
+  & menjalankan ulang job bila tersangkut/gagal.
 - **Tempel hasil Claude manual** → kalau kamu sudah punya output Claude:
   - mode UAC: tempel **dokumen markdown**-nya;
   - mode Epic: tempel **JSON** `{ "epic": {...}, "tasks": [...] }`.
@@ -50,7 +71,7 @@ Lalu:
 
 Sebelum dibuat ke JIRA, tiket divisualisasikan dan **bisa diedit**:
 
-- **UAC:** ubah summary, issue type, priority, label, project key, dan body UAC (markdown).
+- **UAC:** ubah summary, issue type, priority, project key, dan body UAC (markdown).
   Tab **Preview** menampilkan render markdown (heading, tabel EN/ID, link) seperti di JIRA.
 - **Epic:** ubah summary/description Epic, dan tiap **child issue** (summary, type Story/Task,
   description). Bisa **tambah** atau **hapus** child.
@@ -87,7 +108,8 @@ Di halaman **Konfigurasi**: **🗑️ Clear env** menghapus semua kredensial ter
 | Gejala | Sebab & solusi                                                                                                                                         |
 |---|--------------------------------------------------------------------------------------------------------------------------------------------------------|
 | Navbar "Belum terhubung" | Kredensial salah/kosong → cek **Konfigurasi**, Uji Koneksi.                                                                                            |
-| Job stuck di `pending` | Skill `/jira-web` belum jalan → jalankan di Claude Code, atau pakai paste manual. Atau jalankan `/loop 10s /jira-web`. `stop` untuk menghentikan cron |
+| Job stuck di `pending` | Auto-spawn gagal (CLI `claude` tak di PATH / server remote / belum login). Jalankan bridge manual: `/jira-web` di Claude Code, `npm run bridge`, atau `./bin/jira-web.sh`. Bisa juga `/loop 10s /jira-web` (`stop` untuk berhenti), atau paste manual. |
+| "CLI 'claude' tidak ditemukan" saat trigger | `claude` tidak ada di PATH server → pasang/login Claude Code, atau jalankan bridge manual. |
 | `JIRA 400: priority ...` | Project tak punya field priority → kosongkan/ubah default priority.                                                                                    |
 | `JIRA 400: issuetype` | Issue type tak ada di project → samakan nama (cek `list-types`).                                                                                       |
 | Markdown tampil mentah di JIRA | Pastikan konstruk didukung `toADF` (heading, bullet, tabel pipa, link, bold).                                                                          |

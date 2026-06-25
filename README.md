@@ -6,7 +6,10 @@ Buat tiket JIRA dari CLI — **gratis, tanpa AI, hanya butuh JIRA API token**.
 >
 > 🖥️ Lebih suka klik-klik? Ada **web UI** di `web/` — buat UAC & breakdown Epic via Claude Code
 > (tanpa API berbayar), tinjau/edit, lalu buat ke JIRA. Jalankan `/jira-web` di Claude Code atau
-> `npm run dev --prefix web`. Panduan: **[WEB-GUIDE.md](WEB-GUIDE.md)** · deploy: **[DEPLOY.md](DEPLOY.md)** · ringkasan command: **[COMMANDS.md](COMMANDS.md)**.
+> `npm run dev --prefix web`. Tombol **Generate** di web auto-menjalankan `claude -p "/jira-web"`
+> (syarat: CLI `claude` di PATH, server lokal, sesi Claude Code sudah login — lihat WEB-GUIDE).
+> Trigger manual: `npm run bridge` / `./bin/jira-web.sh` / `bin\jira-web.cmd`.
+> Panduan: **[WEB-GUIDE.md](WEB-GUIDE.md)** · deploy: **[DEPLOY.md](DEPLOY.md)** · ringkasan command: **[COMMANDS.md](COMMANDS.md)**.
 
 ---
 
