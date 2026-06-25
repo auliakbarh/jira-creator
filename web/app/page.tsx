@@ -4,9 +4,11 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import UacEditor, { UacTicket } from './components/UacEditor';
 import EpicEditor, { EpicPlan } from './components/EpicEditor';
+import EnvModal, { EnvCfg, isConfigured } from './components/EnvModal';
 
 type Mode = 'uac' | 'epic';
 type Step = 'input' | 'generating' | 'review' | 'done';
+type InputTab = 'generate' | 'paste';
 
 // Split UAC markdown into summary (first `# ` heading) + description (the rest).
 function splitUAC(md: string): { summary: string; description: string } {
@@ -26,9 +28,13 @@ export default function Home() {
 
   const [jobId, setJobId] = useState<string | null>(null);
   const [jobStatus, setJobStatus] = useState<string>('');
-  const [showPaste, setShowPaste] = useState(false);
+  const [inputTab, setInputTab] = useState<InputTab>('generate');
   const [pasteText, setPasteText] = useState('');
   const [err, setErr] = useState<string | null>(null);
+
+  // Environment / credentials gate.
+  const [configured, setConfigured] = useState<boolean | null>(null);
+  const [showEnv, setShowEnv] = useState(false);
 
   const [uac, setUac] = useState<UacTicket | null>(null);
   const [plan, setPlan] = useState<EpicPlan | null>(null);
@@ -38,6 +44,18 @@ export default function Home() {
   const poll = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => () => { if (poll.current) clearInterval(poll.current); }, []);
+
+  // On load, check env. If creds missing → force the env modal open.
+  useEffect(() => {
+    fetch('/api/config')
+      .then((r) => r.json())
+      .then((d: EnvCfg) => {
+        const ok = isConfigured(d);
+        setConfigured(ok);
+        if (!ok) setShowEnv(true);
+      })
+      .catch(() => { setConfigured(false); setShowEnv(true); });
+  }, []);
 
   // ── Build editable models from a generation result ──
   function loadUac(markdown: string, ticket?: any) {
@@ -109,6 +127,7 @@ export default function Home() {
 
   // ── Create the ticket(s) in JIRA ──
   async function create() {
+    if (!configured) { setErr('Isi konfigurasi environment JIRA dulu.'); setShowEnv(true); return; }
     setCreating(true); setErr(null);
     let body: any;
     if (mode === 'uac' && uac) {
@@ -130,14 +149,31 @@ export default function Home() {
 
   function reset() {
     setStep('input'); setUac(null); setPlan(null); setResult(null);
-    setRequirement(''); setPasteText(''); setShowPaste(false); setJobId(null); setErr(null);
+    setRequirement(''); setPasteText(''); setInputTab('generate'); setJobId(null); setErr(null);
   }
 
   // ─────────────────────────── render ───────────────────────────
   return (
     <>
-      <h1>Buat Tiket JIRA</h1>
-      <p className="subtitle">UAC & breakdown dibuat lewat Claude Code (tanpa API berbayar). Tinjau & edit dulu, baru dikirim ke JIRA.</p>
+      {showEnv && (
+        <EnvModal
+          required={!configured}
+          onClose={() => setShowEnv(false)}
+          onSaved={(c) => { setConfigured(isConfigured(c)); if (isConfigured(c)) setShowEnv(false); }}
+        />
+      )}
+
+      <div className="page-head">
+        <div>
+          <h1>Buat Tiket JIRA</h1>
+          <p className="subtitle">UAC & breakdown dibuat lewat Claude Code (tanpa API berbayar). Tinjau & edit dulu, baru dikirim ke JIRA.</p>
+        </div>
+        <button className="secondary small" onClick={() => setShowEnv(true)}>⚙️ Environment</button>
+      </div>
+
+      {configured === false && (
+        <div className="alert warn">Environment JIRA belum diisi. <button className="toggle-link" onClick={() => setShowEnv(true)}>Isi sekarang</button>.</div>
+      )}
 
       {err && <div className="alert err">{err}</div>}
 
@@ -159,9 +195,31 @@ export default function Home() {
 
           <div className="card">
             <h2>2. Requirement</h2>
-            <p className="hint">Tempel deskripsi fitur / requirement (bisa markdown). Akan dikirim ke Claude Code untuk diproses.</p>
-            <textarea style={{ minHeight: 180 }} value={requirement} onChange={(e) => setRequirement(e.target.value)}
-              placeholder={mode === 'uac' ? 'mis. Sebagai user saya ingin reset password lewat email…' : 'mis. Modul pembayaran: integrasi gateway, riwayat transaksi, refund…'} />
+            <div className="tabs">
+              <div className={`tab ${inputTab === 'generate' ? 'active' : ''}`} onClick={() => setInputTab('generate')}>⚡ Generate via Claude Code</div>
+              <div className={`tab ${inputTab === 'paste' ? 'active' : ''}`} onClick={() => setInputTab('paste')}>📋 Tempel Manual</div>
+            </div>
+
+            {inputTab === 'generate' ? (
+              <>
+                <p className="hint">
+                  Tempel deskripsi fitur / requirement (bisa markdown). Dikirim ke Claude Code untuk diproses.
+                  {mode === 'uac' && ' Tiap skenario UAC ditulis dalam bentuk Gherkin GIVEN / WHEN / THEN.'}
+                </p>
+                <textarea style={{ minHeight: 180 }} value={requirement} onChange={(e) => setRequirement(e.target.value)}
+                  placeholder={mode === 'uac' ? 'mis. Sebagai user saya ingin reset password lewat email…' : 'mis. Modul pembayaran: integrasi gateway, riwayat transaksi, refund…'} />
+              </>
+            ) : (
+              <>
+                <p className="hint">
+                  Sudah punya hasil dari Claude (chat / CLI)? Tempel di sini.{' '}
+                  {mode === 'uac' ? 'Untuk UAC: tempel dokumen markdown (skenario GIVEN/WHEN/THEN).' : 'Untuk Epic: tempel JSON { epic, tasks }.'}
+                </p>
+                <textarea style={{ minHeight: 180 }} value={pasteText} onChange={(e) => setPasteText(e.target.value)}
+                  placeholder={mode === 'uac' ? '# [feature] judul\n\n## Description\n…\n\n## User Acceptance Criteria (UAC)\n\n# 1. JUDUL\n\nGIVEN …,\nWHEN …,\nTHEN ….' : '{ "epic": { "summary": "…", "description": "…" }, "tasks": [ … ] }'} />
+              </>
+            )}
+
             <div className="row">
               <div>
                 <label>Bahasa prosa</label>
@@ -183,26 +241,13 @@ export default function Home() {
                 </div>
               )}
             </div>
-          </div>
 
-          <div className="btn-row">
-            <button onClick={generate}>⚡ Generate via Claude Code</button>
-            <button className="secondary" onClick={() => setShowPaste((s) => !s)}>
-              {showPaste ? 'Tutup paste manual' : 'Tempel hasil Claude manual'}
-            </button>
-          </div>
-
-          {showPaste && (
-            <div className="card" style={{ marginTop: 16 }}>
-              <h2>Paste manual</h2>
-              <p className="hint">
-                Sudah punya hasil dari Claude (chat / CLI)? Tempel di sini.{' '}
-                {mode === 'uac' ? 'Untuk UAC: tempel dokumen markdown.' : 'Untuk Epic: tempel JSON { epic, tasks }.'}
-              </p>
-              <textarea style={{ minHeight: 200 }} value={pasteText} onChange={(e) => setPasteText(e.target.value)} />
-              <div className="btn-row"><button onClick={applyPaste}>Proses & tinjau</button></div>
+            <div className="btn-row">
+              {inputTab === 'generate'
+                ? <button onClick={generate}>⚡ Generate via Claude Code</button>
+                : <button onClick={applyPaste}>Proses & tinjau</button>}
             </div>
-          )}
+          </div>
         </>
       )}
 
