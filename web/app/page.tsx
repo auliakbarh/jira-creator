@@ -137,8 +137,14 @@ export default function Home() {
     setJobId(d.job.id);
     setStep('generating');
     setJobStatus('pending');
+    startPolling(d.job.id);
+  }
+
+  // Poll a job until it finishes; the bridge (cron / terminal `/jira-web`) does the work.
+  function startPolling(id: string) {
+    if (poll.current) clearInterval(poll.current);
     poll.current = setInterval(async () => {
-      const jr = await fetch(`/api/jobs/${d.job.id}`).then((x) => x.json());
+      const jr = await fetch(`/api/jobs/${id}`).then((x) => x.json());
       if (!jr.ok) return;
       setJobStatus(jr.job.status);
       if (jr.job.status === 'done') {
@@ -147,10 +153,21 @@ export default function Home() {
         else recordHistory('epic', loadPlan(jr.job.result));
       } else if (jr.job.status === 'error') {
         clearInterval(poll.current!);
-        setErr(jr.job.error || 'Generation gagal.');
-        setStep('input');
+        setErr(jr.job.error || 'Generation gagal. Coba trigger ulang.');
+        // stay on the generating step so the user can re-trigger Claude
       }
     }, 2000);
+  }
+
+  // Re-queue the current job so the Claude Code bridge reprocesses it.
+  async function retryJob() {
+    if (!jobId) return;
+    setErr(null);
+    const r = await fetch(`/api/jobs/${jobId}/retry`, { method: 'POST' });
+    const d = await r.json();
+    if (!d.ok) { setErr(d.error); return; }
+    setJobStatus('pending');
+    startPolling(jobId);
   }
 
   // ── Manual input fallback (paste output, or build via form) ──
@@ -357,14 +374,20 @@ export default function Home() {
 
       {step === 'generating' && (
         <div className="card">
-          <h2><span className="spinner" /> Menunggu Claude Code…</h2>
+          <h2>
+            {jobStatus === 'error' ? '⚠️ Generation gagal' : <><span className="spinner" /> Menunggu Claude Code…</>}
+          </h2>
           <p className="hint">Job <code className="mono">{jobId}</code> — status: <strong>{jobStatus}</strong></p>
-          <div className="alert info">
+          <div className={`alert ${jobStatus === 'error' ? 'warn' : 'info'}`}>
             Pastikan sesi Claude Code menjalankan skill bridge. Di terminal Claude Code, jalankan:
             <pre className="mono" style={{ marginTop: 8 }}>/jira-web</pre>
-            Skill akan memproses job ini di sesi (tanpa biaya API), lalu hasilnya muncul di sini otomatis.
+            Skill memproses job ini di sesi (tanpa biaya API), lalu hasilnya muncul di sini otomatis.
+            Klik <strong>Trigger ulang Claude</strong> untuk mengantri ulang job ini (mis. jika tersangkut atau gagal).
           </div>
-          <button className="secondary" onClick={() => { if (poll.current) clearInterval(poll.current); reset(); }}>Batal</button>
+          <div className="btn-row">
+            <button onClick={retryJob}>🔄 Trigger ulang Claude</button>
+            <button className="secondary" onClick={() => { if (poll.current) clearInterval(poll.current); reset(); }}>Batal</button>
+          </div>
         </div>
       )}
 
