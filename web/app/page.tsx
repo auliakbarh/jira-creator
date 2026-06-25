@@ -48,8 +48,11 @@ export default function Home() {
   const [uac, setUac] = useState<UacTicket | null>(null);
   const [plan, setPlan] = useState<EpicPlan | null>(null);
   const [historyId, setHistoryId] = useState<string | null>(null);
+  const [inputDraftId, setInputDraftId] = useState<string | null>(null);
 
   const [creating, setCreating] = useState(false);
+  const [savingDraft, setSavingDraft] = useState(false);
+  const [draftSaved, setDraftSaved] = useState(false);
   const [result, setResult] = useState<{ epic?: any; created?: any; children?: any[] } | null>(null);
   const poll = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -66,10 +69,26 @@ export default function Home() {
       setLang(e.lang === 'id' ? 'id' : 'en');
       setProjectKey(e.projectKey || '');
       if (e.issuetype) setIssuetype(e.issuetype);
-      setRequirement(e.requirement || '');
-      setHistoryId(null); // a re-create logs a new history entry
-      if (e.mode === 'uac') { setUac(e.payload); setStep('review'); }
-      else { setPlan(e.payload); setStep('review'); }
+
+      if (e.stage === 'input') {
+        // Resume an input-stage draft: restore the form, stay on the input step.
+        const p = e.payload || {};
+        setRequirement(p.requirement || '');
+        setInputTab(p.inputTab || 'generate');
+        setPasteTab(p.pasteTab || 'json');
+        setPasteText(p.pasteText || '');
+        setBuilderPlan(p.builderPlan || emptyPlan());
+        setInputDraftId(e.id || null);
+        setHistoryId(null);
+        setStep('input');
+      } else {
+        // Resume a review-stage draft: load the ticket, go straight to review.
+        setRequirement(e.requirement || '');
+        setHistoryId(e.id || null); // creating promotes this same entry
+        setInputDraftId(null);
+        if (e.mode === 'uac') { setUac(e.payload); setStep('review'); }
+        else { setPlan(e.payload); setStep('review'); }
+      }
     } catch { /* ignore malformed repro */ }
   }, []);
 
@@ -113,15 +132,71 @@ export default function Home() {
   }
 
   // ── Record a freshly generated/pasted result into history ──
+  // If an input-stage draft is open, promote it (same entry) to a review draft.
   async function recordHistory(m: Mode, payload: UacTicket | EpicPlan) {
     try {
+      if (inputDraftId) {
+        await fetch(`/api/history/${inputDraftId}`, {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ stage: 'review', mode: m, requirement, payload, created: false }),
+        });
+        setHistoryId(inputDraftId);
+        setInputDraftId(null);
+        return;
+      }
       const r = await fetch('/api/history', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode: m, lang, projectKey, issuetype, requirement, payload, created: false }),
+        body: JSON.stringify({ mode: m, stage: 'review', lang, projectKey, issuetype, requirement, payload, created: false }),
       });
       const d = await r.json();
       if (d.ok) setHistoryId(d.entry.id);
     } catch { /* history is best-effort */ }
+  }
+
+  // ── Save the current input form as a draft (before generating) ──
+  // asNew=false updates the open draft (if any); asNew=true always creates a new one.
+  async function saveInputDraft(asNew = false) {
+    const hasContent =
+      requirement.trim() ||
+      (inputTab === 'paste' && pasteText.trim()) ||
+      (mode === 'epic' && inputTab === 'paste' && pasteTab === 'form' && builderPlan.epic.summary.trim());
+    if (!hasContent) { setErr('Belum ada isi untuk disimpan jadi draft.'); return; }
+
+    setSavingDraft(true); setErr(null);
+    // Capture only the value relevant to the active input method, so a draft
+    // matches its type (generate vs tempel manual) instead of storing everything.
+    const method =
+      inputTab === 'generate' ? 'generate'
+      : mode === 'uac' ? 'paste-uac'
+      : pasteTab === 'form' ? 'paste-form'
+      : 'paste-json';
+    const payload = {
+      method,
+      inputTab,
+      pasteTab,
+      requirement: method === 'generate' ? requirement : '',
+      pasteText: method === 'paste-uac' || method === 'paste-json' ? pasteText : '',
+      builderPlan: method === 'paste-form' ? builderPlan : emptyPlan(),
+    };
+    try {
+      if (!asNew && inputDraftId) {
+        await fetch(`/api/history/${inputDraftId}`, {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ stage: 'input', requirement, payload, created: false }),
+        });
+      } else {
+        await fetch('/api/history', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode, stage: 'input', lang, projectKey, issuetype, requirement, payload, created: false }),
+        });
+      }
+      setSavingDraft(false);
+      reset();          // clear the form
+      setDraftSaved(true); // show success modal
+    } catch {
+      setSavingDraft(false);
+      setErr('Gagal menyimpan draft.');
+    }
   }
 
   // ── Submit a generation job for the Claude Code bridge to process ──
@@ -204,6 +279,33 @@ export default function Home() {
     recordHistory('epic', p);
   }
 
+  // ── Save current review payload as a draft (not pushed to JIRA) ──
+  // asNew=false updates the open draft (if any); asNew=true always creates a new one.
+  async function saveDraft(asNew = false) {
+    const payload = mode === 'uac' ? uac : plan;
+    if (!payload) return;
+    setSavingDraft(true); setErr(null);
+    try {
+      if (!asNew && historyId) {
+        await fetch(`/api/history/${historyId}`, {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ stage: 'review', requirement, payload, created: false }),
+        });
+      } else {
+        await fetch('/api/history', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode, stage: 'review', lang, projectKey, issuetype, requirement, payload, created: false }),
+        });
+      }
+      setSavingDraft(false);
+      reset();           // clear the form / leave review
+      setDraftSaved(true); // show success modal
+    } catch {
+      setSavingDraft(false);
+      setErr('Gagal menyimpan draft.');
+    }
+  }
+
   // ── Create the ticket(s) in JIRA ──
   async function create() {
     if (!configured) { setErr('Isi konfigurasi environment JIRA dulu.'); setShowEnv(true); return; }
@@ -250,7 +352,7 @@ export default function Home() {
   function reset() {
     setStep('input'); setUac(null); setPlan(null); setResult(null); setHistoryId(null);
     setRequirement(''); setPasteText(''); setInputTab('generate'); setPasteTab('json');
-    setBuilderPlan(emptyPlan()); setJobId(null); setErr(null);
+    setBuilderPlan(emptyPlan()); setJobId(null); setErr(null); setDraftSaved(false); setInputDraftId(null);
   }
 
   // ─────────────────────────── render ───────────────────────────
@@ -262,6 +364,22 @@ export default function Home() {
           onClose={() => setShowEnv(false)}
           onSaved={(c) => { setConfigured(isConfigured(c)); if (isConfigured(c)) setShowEnv(false); }}
         />
+      )}
+
+      {draftSaved && (
+        <div className="modal-backdrop" onMouseDown={() => setDraftSaved(false)}>
+          <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <h2>✅ Draft tersimpan</h2>
+              <button className="modal-x" onClick={() => setDraftSaved(false)} aria-label="Tutup">×</button>
+            </div>
+            <p className="hint">Draft disimpan dan form direset. Lanjutkan kapan saja dari menu Draft.</p>
+            <div className="btn-row">
+              <Link href="/draft" className="btn">Lihat Draft</Link>
+              <button className="secondary" onClick={() => setDraftSaved(false)}>Tutup</button>
+            </div>
+          </div>
+        </div>
       )}
 
       <div className="page-head">
@@ -280,6 +398,11 @@ export default function Home() {
 
       {step === 'input' && (
         <>
+          {inputDraftId && (
+            <div className="alert info">
+              Mengedit draft <code className="mono">{inputDraftId}</code>. <strong>Update draft</strong> menimpa draft ini; <strong>Simpan draft baru</strong> membuat draft terpisah.
+            </div>
+          )}
           <div className="card">
             <h2>1. Pilih jenis</h2>
             <div className="mode-grid">
@@ -367,6 +490,18 @@ export default function Home() {
               {inputTab === 'generate'
                 ? <button onClick={generate}>⚡ Generate via Claude Code</button>
                 : <button onClick={applyPaste}>{inputTab === 'paste' && mode === 'epic' && pasteTab === 'form' ? 'Tinjau & lanjut' : 'Proses & tinjau'}</button>}
+              {inputDraftId ? (
+                <>
+                  <button className="secondary" onClick={() => saveInputDraft(false)} disabled={savingDraft}>
+                    {savingDraft ? 'Menyimpan…' : '💾 Update draft'}
+                  </button>
+                  <button className="secondary" onClick={() => saveInputDraft(true)} disabled={savingDraft}>💾 Simpan draft baru</button>
+                </>
+              ) : (
+                <button className="secondary" onClick={() => saveInputDraft(false)} disabled={savingDraft}>
+                  {savingDraft ? 'Menyimpan…' : '💾 Simpan draft'}
+                </button>
+              )}
             </div>
           </div>
         </>
@@ -393,13 +528,30 @@ export default function Home() {
 
       {step === 'review' && (
         <>
-          <div className="alert ok">Hasil siap. Tinjau & edit di bawah, lalu buat tiketnya.</div>
+          <div className="alert ok">Hasil siap. Tinjau & edit di bawah, lalu simpan draft atau buat tiketnya.</div>
+          {historyId && (
+            <div className="alert info">
+              Draft tersimpan: <code className="mono">{historyId}</code>. <strong>Update draft</strong> menimpa; <strong>Simpan draft baru</strong> membuat salinan.
+            </div>
+          )}
           {mode === 'uac' && uac && <UacEditor ticket={uac} onChange={setUac} keyPlaceholder={envProjectKey} />}
           {mode === 'epic' && plan && <EpicEditor plan={plan} onChange={setPlan} keyPlaceholder={envProjectKey} />}
           <div className="btn-row">
-            <button className="green" onClick={create} disabled={creating}>
+            <button className="green" onClick={create} disabled={creating || savingDraft}>
               {creating ? <><span className="spinner" /> Membuat…</> : '🚀 Buat ke JIRA'}
             </button>
+            {historyId ? (
+              <>
+                <button className="secondary" onClick={() => saveDraft(false)} disabled={savingDraft || creating}>
+                  {savingDraft ? 'Menyimpan…' : '💾 Update draft'}
+                </button>
+                <button className="secondary" onClick={() => saveDraft(true)} disabled={savingDraft || creating}>💾 Simpan draft baru</button>
+              </>
+            ) : (
+              <button className="secondary" onClick={() => saveDraft(false)} disabled={savingDraft || creating}>
+                {savingDraft ? 'Menyimpan…' : '💾 Simpan draft'}
+              </button>
+            )}
             <button className="secondary" onClick={reset}>Mulai ulang</button>
           </div>
         </>

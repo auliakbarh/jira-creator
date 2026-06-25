@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createEntry, listEntries, HistoryMode } from '@/lib/history';
+import { createEntry, listEntries, HistoryMode, HistoryStage } from '@/lib/history';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,7 +9,7 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   const body = (await req.json()) as {
-    mode?: HistoryMode; lang?: 'en' | 'id'; projectKey?: string; issuetype?: string;
+    mode?: HistoryMode; stage?: HistoryStage; lang?: 'en' | 'id'; projectKey?: string; issuetype?: string;
     requirement?: string; payload?: Record<string, unknown>; created?: boolean; result?: Record<string, unknown>;
   };
   if (body.mode !== 'uac' && body.mode !== 'epic') {
@@ -20,6 +20,7 @@ export async function POST(req: NextRequest) {
   }
   const entry = await createEntry({
     mode: body.mode,
+    stage: body.stage === 'input' ? 'input' : 'review',
     lang: body.lang === 'id' ? 'id' : 'en',
     projectKey: body.projectKey,
     issuetype: body.issuetype,

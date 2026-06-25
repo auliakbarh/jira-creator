@@ -5,13 +5,18 @@ import { DATA_DIR } from './config';
 const HISTORY_DIR = path.join(DATA_DIR, 'history');
 
 export type HistoryMode = 'uac' | 'epic';
+export type HistoryStage = 'input' | 'review';
 
-// `payload` is the editable model produced for review:
-//  - uac  → { summary, description, issuetype, priority, labels[], projectKey }
-//  - epic → { epic:{summary,description}, tasks:[{summary,description,issuetype}], projectKey }
+// `payload` depends on `stage`:
+//  - stage 'review' (a generated/edited ticket, ready to create):
+//      uac  → { summary, description, issuetype, priority, labels[], projectKey }
+//      epic → { epic:{summary,description}, tasks:[...], projectKey }
+//  - stage 'input' (work-in-progress before generating): a snapshot of the input
+//      form → { requirement, inputTab, pasteTab, pasteText, builderPlan }
 export interface HistoryEntry {
   id: string;
   mode: HistoryMode;
+  stage: HistoryStage;
   lang: 'en' | 'id';
   projectKey?: string;
   issuetype?: string;
@@ -32,7 +37,13 @@ function newId(): string {
 }
 
 // Derive a short human label from the payload.
-function deriveTitle(mode: HistoryMode, payload: Record<string, unknown>): string {
+function deriveTitle(mode: HistoryMode, payload: Record<string, unknown>, stage: HistoryStage): string {
+  if (stage === 'input') {
+    const p = payload as any;
+    if (p?.method === 'paste-form') return String(p?.builderPlan?.epic?.summary || 'Draft form (belum dibuat)');
+    const txt = String((p?.method?.startsWith?.('paste') ? p?.pasteText : p?.requirement) || p?.requirement || p?.pasteText || '').trim();
+    return txt ? txt.split('\n')[0].slice(0, 80) : 'Draft (belum digenerate)';
+  }
   if (mode === 'uac') return String((payload as any)?.summary || 'UAC tanpa judul');
   const epic = (payload as any)?.epic;
   return String(epic?.summary || 'Epic tanpa judul');
@@ -40,13 +51,15 @@ function deriveTitle(mode: HistoryMode, payload: Record<string, unknown>): strin
 
 export async function createEntry(
   input: Pick<HistoryEntry, 'mode' | 'lang' | 'requirement' | 'payload'> &
-    Partial<Pick<HistoryEntry, 'projectKey' | 'issuetype' | 'created' | 'result'>>
+    Partial<Pick<HistoryEntry, 'stage' | 'projectKey' | 'issuetype' | 'created' | 'result'>>
 ): Promise<HistoryEntry> {
   await ensureDir();
   const now = new Date().toISOString();
+  const stage: HistoryStage = input.stage ?? 'review';
   const entry: HistoryEntry = {
     id: newId(),
     mode: input.mode,
+    stage,
     lang: input.lang,
     projectKey: input.projectKey,
     issuetype: input.issuetype,
@@ -54,7 +67,7 @@ export async function createEntry(
     payload: input.payload,
     created: input.created ?? false,
     result: input.result,
-    title: deriveTitle(input.mode, input.payload),
+    title: deriveTitle(input.mode, input.payload, stage),
     createdAt: now,
     updatedAt: now,
   };
@@ -70,8 +83,8 @@ export async function getEntry(id: string): Promise<HistoryEntry | null> {
 export async function updateEntry(id: string, patch: Partial<HistoryEntry>): Promise<HistoryEntry | null> {
   const entry = await getEntry(id);
   if (!entry) return null;
-  const next: HistoryEntry = { ...entry, ...patch, id: entry.id, updatedAt: new Date().toISOString() };
-  if (patch.payload) next.title = deriveTitle(next.mode, next.payload);
+  const next: HistoryEntry = { ...entry, ...patch, id: entry.id, stage: patch.stage ?? entry.stage ?? 'review', updatedAt: new Date().toISOString() };
+  if (patch.payload) next.title = deriveTitle(next.mode, next.payload, next.stage);
   await writeFile(entryPath(id), JSON.stringify(next, null, 2), 'utf-8');
   return next;
 }

@@ -27,6 +27,7 @@ export default function Nav() {
     <nav className="nav">
       <Link href="/" className="brand">🎫 JIRA Creator</Link>
       {link('/', 'Buat Tiket')}
+      {link('/draft', 'Draft')}
       {link('/history', 'Riwayat')}
       {link('/config', 'Konfigurasi')}
       <span className="spacer" />
