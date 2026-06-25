@@ -46,7 +46,7 @@ function TaskCard({ task, onChange, onRemove, index }: { task: EpicTask; index: 
   );
 }
 
-export default function EpicEditor({ plan, onChange }: { plan: EpicPlan; onChange: (p: EpicPlan) => void }) {
+export default function EpicEditor({ plan, onChange, keyPlaceholder }: { plan: EpicPlan; onChange: (p: EpicPlan) => void; keyPlaceholder?: string }) {
   const [tab, setTab] = useState<'edit' | 'preview'>('edit');
   const setEpic = (k: 'summary' | 'description', v: string) => onChange({ ...plan, epic: { ...plan.epic, [k]: v } });
   const setTask = (i: number, t: EpicTask) => onChange({ ...plan, tasks: plan.tasks.map((x, j) => (j === i ? t : x)) });
@@ -68,7 +68,7 @@ export default function EpicEditor({ plan, onChange }: { plan: EpicPlan; onChang
             </div>
             <div style={{ flex: 1 }}>
               <label>Project Key <span className="opt">(default jika kosong)</span></label>
-              <input type="text" value={plan.projectKey} onChange={(e) => onChange({ ...plan, projectKey: e.target.value })} placeholder="default" />
+              <input type="text" value={plan.projectKey} onChange={(e) => onChange({ ...plan, projectKey: e.target.value })} placeholder={keyPlaceholder || 'default'} />
             </div>
           </div>
           <label>Epic Description</label>

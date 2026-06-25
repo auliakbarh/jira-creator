@@ -9,6 +9,12 @@ import EnvModal, { EnvCfg, isConfigured } from './components/EnvModal';
 type Mode = 'uac' | 'epic';
 type Step = 'input' | 'generating' | 'review' | 'done';
 type InputTab = 'generate' | 'paste';
+type PasteTab = 'json' | 'form';
+
+// A fresh epic plan for the manual form builder.
+function emptyPlan(): EpicPlan {
+  return { epic: { summary: '', description: '' }, tasks: [{ summary: '', description: '', issuetype: 'Story' }], projectKey: '' };
+}
 
 // Split UAC markdown into summary (first `# ` heading) + description (the rest).
 function splitUAC(md: string): { summary: string; description: string } {
@@ -22,19 +28,22 @@ export default function Home() {
   const [step, setStep] = useState<Step>('input');
   const [mode, setMode] = useState<Mode>('uac');
   const [requirement, setRequirement] = useState('');
-  const [lang, setLang] = useState<'en' | 'id'>('id');
+  const [lang, setLang] = useState<'en' | 'id'>('en');
   const [projectKey, setProjectKey] = useState('');
   const [issuetype, setIssuetype] = useState('Story');
 
   const [jobId, setJobId] = useState<string | null>(null);
   const [jobStatus, setJobStatus] = useState<string>('');
   const [inputTab, setInputTab] = useState<InputTab>('generate');
+  const [pasteTab, setPasteTab] = useState<PasteTab>('json');
   const [pasteText, setPasteText] = useState('');
+  const [builderPlan, setBuilderPlan] = useState<EpicPlan>(emptyPlan());
   const [err, setErr] = useState<string | null>(null);
 
   // Environment / credentials gate.
   const [configured, setConfigured] = useState<boolean | null>(null);
   const [showEnv, setShowEnv] = useState(false);
+  const [envProjectKey, setEnvProjectKey] = useState('');
 
   const [uac, setUac] = useState<UacTicket | null>(null);
   const [plan, setPlan] = useState<EpicPlan | null>(null);
@@ -71,6 +80,7 @@ export default function Home() {
       .then((d: EnvCfg) => {
         const ok = isConfigured(d);
         setConfigured(ok);
+        setEnvProjectKey(d?.projectKey || '');
         if (!ok) setShowEnv(true);
       })
       .catch(() => { setConfigured(false); setShowEnv(true); });
@@ -143,13 +153,15 @@ export default function Home() {
     }, 2000);
   }
 
-  // ── Manual paste fallback (paste Claude output directly) ──
+  // ── Manual input fallback (paste output, or build via form) ──
   function applyPaste() {
     setErr(null);
     try {
       if (mode === 'uac') {
         if (!pasteText.trim()) throw new Error('Tempel markdown UAC dulu.');
         recordHistory('uac', loadUac(pasteText.trim()));
+      } else if (pasteTab === 'form') {
+        applyBuilder();
       } else {
         const parsed = JSON.parse(pasteText.trim());
         if (!parsed.epic || !Array.isArray(parsed.tasks)) throw new Error('JSON harus punya { epic, tasks }.');
@@ -158,6 +170,21 @@ export default function Home() {
     } catch (e) {
       setErr(`Gagal memproses: ${(e as Error).message}`);
     }
+  }
+
+  // Build an epic plan from the manual form builder (no AI, no paste).
+  function applyBuilder() {
+    if (!builderPlan.epic.summary.trim()) throw new Error('Isi Epic Summary dulu.');
+    const tasks = builderPlan.tasks.filter((t) => t.summary.trim());
+    if (tasks.length === 0) throw new Error('Tambah minimal satu child issue.');
+    const p: EpicPlan = {
+      epic: { summary: builderPlan.epic.summary, description: builderPlan.epic.description || '' },
+      tasks: tasks.map((t) => ({ summary: t.summary, description: t.description || '', issuetype: t.issuetype || 'Task' })),
+      projectKey: builderPlan.projectKey || projectKey,
+    };
+    setPlan(p);
+    setStep('review');
+    recordHistory('epic', p);
   }
 
   // ── Create the ticket(s) in JIRA ──
@@ -205,7 +232,8 @@ export default function Home() {
 
   function reset() {
     setStep('input'); setUac(null); setPlan(null); setResult(null); setHistoryId(null);
-    setRequirement(''); setPasteText(''); setInputTab('generate'); setJobId(null); setErr(null);
+    setRequirement(''); setPasteText(''); setInputTab('generate'); setPasteTab('json');
+    setBuilderPlan(emptyPlan()); setJobId(null); setErr(null);
   }
 
   // ─────────────────────────── render ───────────────────────────
@@ -265,43 +293,63 @@ export default function Home() {
                 <textarea style={{ minHeight: 180 }} value={requirement} onChange={(e) => setRequirement(e.target.value)}
                   placeholder={mode === 'uac' ? 'mis. Sebagai user saya ingin reset password lewat email…' : 'mis. Modul pembayaran: integrasi gateway, riwayat transaksi, refund…'} />
               </>
+            ) : mode === 'uac' ? (
+              <>
+                <p className="hint">Sudah punya hasil dari Claude (chat / CLI)? Tempel dokumen markdown UAC di sini (skenario GIVEN/WHEN/THEN).</p>
+                <textarea style={{ minHeight: 180 }} value={pasteText} onChange={(e) => setPasteText(e.target.value)}
+                  placeholder={'# [feature] judul\n\n## Description\n…\n\n## User Acceptance Criteria (UAC)\n\n# 1. JUDUL\n\nGIVEN …,\nWHEN …,\nTHEN ….'} />
+              </>
             ) : (
               <>
-                <p className="hint">
-                  Sudah punya hasil dari Claude (chat / CLI)? Tempel di sini.{' '}
-                  {mode === 'uac' ? 'Untuk UAC: tempel dokumen markdown (skenario GIVEN/WHEN/THEN).' : 'Untuk Epic: tempel JSON { epic, tasks }.'}
-                </p>
-                <textarea style={{ minHeight: 180 }} value={pasteText} onChange={(e) => setPasteText(e.target.value)}
-                  placeholder={mode === 'uac' ? '# [feature] judul\n\n## Description\n…\n\n## User Acceptance Criteria (UAC)\n\n# 1. JUDUL\n\nGIVEN …,\nWHEN …,\nTHEN ….' : '{ "epic": { "summary": "…", "description": "…" }, "tasks": [ … ] }'} />
+                <div className="tabs">
+                  <div className={`tab ${pasteTab === 'json' ? 'active' : ''}`} onClick={() => setPasteTab('json')}>📄 Tempel JSON</div>
+                  <div className={`tab ${pasteTab === 'form' ? 'active' : ''}`} onClick={() => setPasteTab('form')}>🧱 Builder (form)</div>
+                </div>
+                {pasteTab === 'json' ? (
+                  <>
+                    <p className="hint">Tempel JSON breakdown dari Claude: {'{ epic, tasks }'}.</p>
+                    <textarea style={{ minHeight: 180 }} value={pasteText} onChange={(e) => setPasteText(e.target.value)}
+                      placeholder={'{ "epic": { "summary": "…", "description": "…" }, "tasks": [ { "summary": "…", "description": "…", "issuetype": "Story" } ] }'} />
+                  </>
+                ) : (
+                  <>
+                    <p className="hint">Isi Epic + child issues lewat form. Tanpa AI — langsung tinjau & buat ke JIRA.</p>
+                    <EpicEditor plan={builderPlan} onChange={setBuilderPlan} keyPlaceholder={envProjectKey} />
+                  </>
+                )}
               </>
             )}
 
-            <div className="row">
-              <div>
-                <label>Bahasa prosa</label>
-                <select value={lang} onChange={(e) => setLang(e.target.value as 'en' | 'id')}>
-                  <option value="id">Bahasa Indonesia</option>
-                  <option value="en">English</option>
-                </select>
-              </div>
-              <div>
-                <label>Project Key <span className="opt">(kosong = default)</span></label>
-                <input type="text" value={projectKey} onChange={(e) => setProjectKey(e.target.value)} placeholder="default dari konfigurasi" />
-              </div>
-              {mode === 'uac' && (
+            {!(inputTab === 'paste' && mode === 'epic' && pasteTab === 'form') && (
+              <div className="row">
+                {inputTab === 'generate' && (
+                  <div>
+                    <label>Bahasa prosa</label>
+                    <select value={lang} onChange={(e) => setLang(e.target.value as 'en' | 'id')}>
+                      <option value="en">English</option>
+                      <option value="id">Bahasa Indonesia</option>
+                    </select>
+                  </div>
+                )}
                 <div>
-                  <label>Issue Type</label>
-                  <select value={issuetype} onChange={(e) => setIssuetype(e.target.value)}>
-                    {['Story', 'Task', 'Bug', 'Spike'].map((t) => <option key={t}>{t}</option>)}
-                  </select>
+                  <label>Project Key <span className="opt">(kosong = default)</span></label>
+                  <input type="text" value={projectKey} onChange={(e) => setProjectKey(e.target.value)} placeholder={envProjectKey || 'default dari konfigurasi'} />
                 </div>
-              )}
-            </div>
+                {mode === 'uac' && (
+                  <div>
+                    <label>Issue Type</label>
+                    <select value={issuetype} onChange={(e) => setIssuetype(e.target.value)}>
+                      {['Story', 'Task', 'Bug', 'Spike'].map((t) => <option key={t}>{t}</option>)}
+                    </select>
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="btn-row">
               {inputTab === 'generate'
                 ? <button onClick={generate}>⚡ Generate via Claude Code</button>
-                : <button onClick={applyPaste}>Proses & tinjau</button>}
+                : <button onClick={applyPaste}>{inputTab === 'paste' && mode === 'epic' && pasteTab === 'form' ? 'Tinjau & lanjut' : 'Proses & tinjau'}</button>}
             </div>
           </div>
         </>
@@ -323,8 +371,8 @@ export default function Home() {
       {step === 'review' && (
         <>
           <div className="alert ok">Hasil siap. Tinjau & edit di bawah, lalu buat tiketnya.</div>
-          {mode === 'uac' && uac && <UacEditor ticket={uac} onChange={setUac} />}
-          {mode === 'epic' && plan && <EpicEditor plan={plan} onChange={setPlan} />}
+          {mode === 'uac' && uac && <UacEditor ticket={uac} onChange={setUac} keyPlaceholder={envProjectKey} />}
+          {mode === 'epic' && plan && <EpicEditor plan={plan} onChange={setPlan} keyPlaceholder={envProjectKey} />}
           <div className="btn-row">
             <button className="green" onClick={create} disabled={creating}>
               {creating ? <><span className="spinner" /> Membuat…</> : '🚀 Buat ke JIRA'}

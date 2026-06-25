@@ -12,7 +12,7 @@ export interface UacTicket {
   projectKey: string;
 }
 
-export default function UacEditor({ ticket, onChange }: { ticket: UacTicket; onChange: (t: UacTicket) => void }) {
+export default function UacEditor({ ticket, onChange, keyPlaceholder }: { ticket: UacTicket; onChange: (t: UacTicket) => void; keyPlaceholder?: string }) {
   const [tab, setTab] = useState<'edit' | 'preview'>('edit');
   const set = <K extends keyof UacTicket>(k: K, v: UacTicket[K]) => onChange({ ...ticket, [k]: v });
 
@@ -41,7 +41,7 @@ export default function UacEditor({ ticket, onChange }: { ticket: UacTicket; onC
           </div>
           <div>
             <label>Project Key <span className="opt">(kosong = default)</span></label>
-            <input type="text" value={ticket.projectKey} onChange={(e) => set('projectKey', e.target.value)} placeholder="default" />
+            <input type="text" value={ticket.projectKey} onChange={(e) => set('projectKey', e.target.value)} placeholder={keyPlaceholder || 'default'} />
           </div>
         </div>
 
