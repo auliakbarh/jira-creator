@@ -175,7 +175,6 @@ export function buildTicketTemplate(
     summary,
     description,
     issuetype: opts.issuetype,
-    labels: ['uac'],
   };
   if (opts.priority)   ticket.priority   = opts.priority;
   if (opts.projectKey) ticket.projectKey = opts.projectKey;

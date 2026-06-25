@@ -58,7 +58,6 @@ function previewTicket(t: TicketInput) {
   console.log(chalk.cyan('  Summary:     ') + t.summary);
   console.log(chalk.cyan('  Type:        ') + (t.issuetype ?? 'Task'));
   console.log(chalk.cyan('  Priority:    ') + (t.priority  ?? 'Medium'));
-  console.log(chalk.cyan('  Labels:      ') + ((t.labels as string[] | undefined)?.join(', ') || '—'));
   console.log(chalk.cyan('  Components:  ') + ((t.components as string[] | undefined)?.join(', ') || '—'));
   if (t.story_points) console.log(chalk.cyan('  Story pts:   ') + t.story_points);
   console.log();
@@ -136,18 +135,12 @@ async function cmdCreate(opts: { project?: string }) {
     initial: 2,
   });
 
-  const { labelsRaw } = await prompts({
-    type: 'text', name: 'labelsRaw',
-    message: 'Labels (pisahkan dengan koma, opsional):',
-  });
-
   const projectKey = opts.project ?? process.env.JIRA_PROJECT_KEY ?? 'ENG';
   const ticket: TicketInput = {
     summary,
     description: description || undefined,
     issuetype,
     priority,
-    labels: labelsRaw ? labelsRaw.split(',').map((s: string) => s.trim()) : [],
     projectKey,
   };
 
@@ -476,7 +469,6 @@ async function cmdEpic(
       description: breakdown.epic.description,
       issuetype: 'Epic',
       projectKey,
-      labels: ['epic'],
     });
     epicKey = epic.key;
     epicSpinner.succeed(chalk.green(`Epic dibuat: ${epic.key}`));
@@ -492,7 +484,6 @@ async function cmdEpic(
     issuetype: t.issuetype ?? 'Task',
     projectKey,
     parentKey: epicKey,
-    labels: ['epic-breakdown'],
   }));
 
   const childSpinner = ora(`Membuat ${children.length} task & menautkan ke ${epicKey}…`).start();

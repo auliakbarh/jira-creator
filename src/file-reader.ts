@@ -22,7 +22,6 @@ export async function readInputFile(filePath: string): Promise<TicketInput[]> {
 
     return rows.map(row => ({
       ...row,
-      labels:     row.labels     ? row.labels.split('|').map(s => s.trim())     : [],
       components: row.components ? row.components.split('|').map(s => s.trim()) : [],
       story_points: row.story_points ? Number(row.story_points) : undefined,
     })) as TicketInput[];

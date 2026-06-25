@@ -66,8 +66,7 @@ JANGAN cuma overview; harus identik dengan body markdown.
     "summary": "<teks baris judul tanpa '# '>",
     "description": "<markdown LENGKAP setelah baris judul = blok ## Description + seluruh ## UAC>",
     "issuetype": "<field issuetype job, default Story>",
-    "projectKey": "<field projectKey job bila ada, selain itu kosongkan>",
-    "labels": ["uac"]
+    "projectKey": "<field projectKey job bila ada, selain itu kosongkan>"
   }
 }
 ```

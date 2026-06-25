@@ -94,7 +94,6 @@ export interface Template {
   name: string;
   issuetype: IssueType;
   defaultPriority: Priority;
-  labels: string[];
   fields: TemplateField[];
   buildSummary?: (answers: Record<string, string>) => string;
   buildDescription: (answers: Record<string, string>) => string;

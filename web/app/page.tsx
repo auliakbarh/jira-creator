@@ -113,7 +113,6 @@ export default function Home() {
       description: ticket?.description ?? description,
       issuetype: ticket?.issuetype || issuetype,
       priority: ticket?.priority || 'Medium',
-      labels: ticket?.labels || ['uac'],
       projectKey: ticket?.projectKey || projectKey,
     };
     setUac(u);

@@ -8,7 +8,6 @@ export interface UacTicket {
   description: string;
   issuetype: string;
   priority: string;
-  labels: string[];
   projectKey: string;
 }
 
@@ -44,9 +43,6 @@ export default function UacEditor({ ticket, onChange, keyPlaceholder }: { ticket
             <input type="text" value={ticket.projectKey} onChange={(e) => set('projectKey', e.target.value)} placeholder={keyPlaceholder || 'default'} />
           </div>
         </div>
-
-        <label>Labels <span className="opt">(pisah dengan koma)</span></label>
-        <input type="text" value={ticket.labels.join(', ')} onChange={(e) => set('labels', e.target.value.split(',').map((s) => s.trim()).filter(Boolean))} />
 
         <label>Description (UAC) — markdown</label>
         <div className="tabs">

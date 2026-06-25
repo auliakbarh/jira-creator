@@ -171,7 +171,6 @@ export async function createTicket(c: JiraCreds, input: TicketInput): Promise<Cr
     description,
     issuetype = c.defaultIssueType || 'Task',
     priority = c.defaultPriority || 'Medium',
-    labels = [],
     components = [],
     story_points,
     projectKey = c.projectKey,
@@ -182,7 +181,6 @@ export async function createTicket(c: JiraCreds, input: TicketInput): Promise<Cr
     project: { key: projectKey },
     summary,
     issuetype: { name: issuetype },
-    labels: (labels as string[]).filter(Boolean),
     components: (components as string[]).filter(Boolean).map((x) => ({ name: x })),
   };
   // Priority/components are not enabled on every project; only set priority when given.

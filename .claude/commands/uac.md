@@ -42,8 +42,7 @@ strukturnya PERSIS. Lalu hasilkan SATU dokumen Markdown:
      "summary": "<teks baris judul, tanpa '# ' di depan>",
      "description": "<isi UAC LENGKAP setelah baris judul = blok ## Description + seluruh ## UAC>",
      "issuetype": "Story",
-     "projectKey": "<JIRA_PROJECT_KEY dari .env bila ada, jika tidak ENG>",
-     "labels": ["uac"]
+     "projectKey": "<JIRA_PROJECT_KEY dari .env bila ada, jika tidak ENG>"
    }
    ```
    - `description` HARUS identik dengan body markdown (dikurangi baris judul) — SEMUA skenario Gherkin,

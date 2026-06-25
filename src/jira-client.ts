@@ -162,7 +162,6 @@ export async function createTicket(input: TicketInput): Promise<CreatedTicket> {
     description,
     issuetype   = process.env.JIRA_DEFAULT_ISSUE_TYPE || 'Task',
     priority    = process.env.JIRA_DEFAULT_PRIORITY   || 'Medium',
-    labels      = [],
     components  = [],
     story_points,
     assignee_account_id,
@@ -175,7 +174,6 @@ export async function createTicket(input: TicketInput): Promise<CreatedTicket> {
     summary,
     issuetype:   { name: issuetype },
     priority:    { name: priority },
-    labels:      (labels as string[]).filter(Boolean),
     components:  (components as string[]).filter(Boolean).map(c => ({ name: c })),
   };
 

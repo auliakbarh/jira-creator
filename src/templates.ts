@@ -5,7 +5,6 @@ export const TEMPLATES: Record<TemplateKey, Template> = {
     name: 'Bug Report',
     issuetype: 'Bug',
     defaultPriority: 'High',
-    labels: ['bug', 'needs-triage'],
     fields: [
       { key: 'summary',   prompt: 'Judul bug (singkat & jelas)',              placeholder: 'Login crash pada iOS Safari 17' },
       { key: 'steps',     prompt: 'Langkah-langkah reproduksi',               placeholder: '1. Buka app\n2. Tap login\n3. App crash', textarea: true },
@@ -21,7 +20,6 @@ export const TEMPLATES: Record<TemplateKey, Template> = {
     name: 'User Story',
     issuetype: 'Story',
     defaultPriority: 'Medium',
-    labels: ['feature'],
     fields: [
       { key: 'role',      prompt: 'As a... (siapa penggunanya)',    placeholder: 'registered customer' },
       { key: 'goal',      prompt: 'I want to... (apa tujuannya)',   placeholder: 'filter produk berdasarkan harga' },
@@ -37,7 +35,6 @@ export const TEMPLATES: Record<TemplateKey, Template> = {
     name: 'Technical Task',
     issuetype: 'Task',
     defaultPriority: 'Medium',
-    labels: ['engineering'],
     fields: [
       { key: 'summary',   prompt: 'Judul task',                               placeholder: 'Upgrade PostgreSQL dari v14 ke v16' },
       { key: 'what',      prompt: 'Apa yang perlu dilakukan?',                placeholder: 'Database PostgreSQL 14 sudah EOL...', textarea: true },
@@ -51,7 +48,6 @@ export const TEMPLATES: Record<TemplateKey, Template> = {
     name: 'Epic',
     issuetype: 'Epic',
     defaultPriority: 'High',
-    labels: ['epic'],
     fields: [
       { key: 'summary',    prompt: 'Judul epic',                              placeholder: 'Redesign checkout flow' },
       { key: 'objective',  prompt: 'Business objective',                      placeholder: 'Tingkatkan conversion rate checkout dari 60% → 75%' },
@@ -78,7 +74,6 @@ export function applyTemplate(
     description,
     issuetype:  tpl.issuetype,
     priority:   overrides.priority ?? tpl.defaultPriority,
-    labels:     tpl.labels,
     components: overrides.components ?? [],
   };
 }
