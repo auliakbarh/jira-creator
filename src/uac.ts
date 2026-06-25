@@ -40,18 +40,18 @@ export function buildUACPrompt(input: string, lang: string): string {
     '3. A `## User Acceptance Criteria (UAC)` section, followed by one block per scenario.',
     '   Each scenario block MUST be formatted exactly like this:',
     '   - A heading: `# N. SCENARIO TITLE IN UPPERCASE` (N is a sequential number starting at 1).',
-    '   - Gherkin clauses, one per line. Put a BLANK LINE before each GIVEN, WHEN, and THEN',
-    '     so each of those blocks begins on a new line (AND clauses stay attached to the block',
-    '     above them). End each clause with a comma except the final clause of the scenario,',
-    '     which ends with a period. Example (note the blank lines):',
+    '   - Keep one Gherkin group (GIVEN→AND→WHEN→THEN→AND) as a SINGLE block: one clause per line,',
+    '     NO blank line between clauses. End each clause with a comma except the final clause of the',
+    '     group, which ends with a period. Example (note: NO blank lines inside the group):',
     '       GIVEN <precondition>,',
     '       AND <more preconditions>,',
-    '',
     '       WHEN <action>,',
-    '',
     '       THEN <expected outcome>,',
     '       AND <more outcomes>.',
-    '   - When the scenario shows user-facing copy/text, include a bilingual table right after it:',
+    '   - Put a BLANK LINE only: between the heading and its block, before & after a table, and',
+    '     before the image placeholder. A new WHEN/THEN group after a table is its own block.',
+    '   - A bilingual table is REQUIRED for every user-facing text/label/message (buttons, titles,',
+    '     copy, error messages) — one row per string:',
     '     `| EN | ID |` / `|---|---|` / `| <english copy> | <indonesian copy> |`',
     '   - End every UI-related scenario with the placeholder line on its own:',
     '     `[image-or-design-ui-from-figma](https://example-image.com)`',
@@ -75,15 +75,18 @@ export async function readUACInput(filePath: string): Promise<string> {
 }
 
 // ─── Normalize spacing so tables/placeholders always render ──────────────────
-// The model tends to glue the EN/ID table and the Figma placeholder directly to
-// the preceding Gherkin line. Markdown tables need a blank line before them, so we
-// insert a single blank line before any table start, before an image placeholder,
-// and before plain content that immediately follows a table.
+// Match the house template: each Gherkin group (GIVEN→AND→WHEN→THEN→AND) stays a
+// SINGLE block (single newlines render as hardBreaks in ADF), and blank lines only
+// separate blocks. We insert a blank line before/after headings, before a table
+// start, before an image placeholder, before plain content right after a table, and
+// before each GIVEN that opens a new scenario group — but NOT between the clauses of
+// one group (no forced blank before WHEN/THEN).
 export function tidyMarkdown(md: string): string {
-  const isTable = (l: string) => /^\s*\|.*\|\s*$/.test(l);
-  const isImg   = (l: string) => l.trim().startsWith('[image-or-design-ui-from-figma]');
-  // A GIVEN/WHEN/THEN clause that opens a Gherkin block (AND continuations stay attached).
-  const isGwt   = (l: string) => /^\s*(GIVEN|WHEN|THEN)\b/.test(l);
+  const isTable   = (l: string) => /^\s*\|.*\|\s*$/.test(l);
+  const isImg     = (l: string) => l.trim().startsWith('[image-or-design-ui-from-figma]');
+  const isHeading = (l: string) => /^\s*#{1,6}\s/.test(l);
+  // Only GIVEN opens a new Gherkin group; AND/WHEN/THEN stay attached to it.
+  const isGiven   = (l: string) => /^\s*GIVEN\b/.test(l);
 
   const lines = md.split('\n');
   const out: string[] = [];
@@ -91,9 +94,11 @@ export function tidyMarkdown(md: string): string {
   for (const line of lines) {
     const prev = out.length ? out[out.length - 1] : '';
     const needBlankBefore =
-      (isTable(line) && !isTable(prev)) ||                              // table block start
-      isImg(line) ||                                                    // image placeholder
-      isGwt(line) ||                                                    // GIVEN/WHEN/THEN block start
+      isHeading(line) ||                                               // heading start
+      (isHeading(prev) && line.trim() !== '') ||                       // content right after a heading
+      (isTable(line) && !isTable(prev)) ||                             // table block start
+      isImg(line) ||                                                   // image placeholder
+      isGiven(line) ||                                                 // new Gherkin group start
       (!isTable(line) && !isImg(line) && line.trim() !== '' && isTable(prev)); // content after a table
 
     if (needBlankBefore && prev.trim() !== '') out.push('');
