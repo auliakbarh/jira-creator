@@ -1,7 +1,8 @@
 .env
 .idea
-.claude
-!.claude/commands/*
+.claude/*
+!.claude/commands
+!.claude/commands/**
 
 CLAUDE.md
 CLAUDE-rules.md
