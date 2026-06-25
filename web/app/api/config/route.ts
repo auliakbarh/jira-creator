@@ -27,3 +27,12 @@ export async function POST(req: NextRequest) {
   await saveConfig(next);
   return NextResponse.json(maskConfig(next));
 }
+
+// Clear all stored credentials (reset to empty defaults).
+export async function DELETE() {
+  const empty: StoredConfig = {
+    baseUrl: '', email: '', apiToken: '', projectKey: '', defaultIssueType: 'Task', defaultPriority: 'Medium',
+  };
+  await saveConfig(empty);
+  return NextResponse.json(maskConfig(empty));
+}

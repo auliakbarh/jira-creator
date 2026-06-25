@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 
 interface Cfg {
   baseUrl: string; email: string; apiToken: string;
@@ -15,6 +16,7 @@ export default function ConfigPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [clearing, setClearing] = useState(false);
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err' | 'info'; text: string } | null>(null);
 
   useEffect(() => {
@@ -44,12 +46,27 @@ export default function ConfigPage() {
       : { kind: 'err', text: `Gagal: ${d.error}` });
   }
 
+  async function clearEnv() {
+    if (!confirm('Hapus semua kredensial JIRA yang tersimpan? Tindakan ini tidak bisa dibatalkan.')) return;
+    setClearing(true); setMsg(null);
+    const r = await fetch('/api/config', { method: 'DELETE' });
+    const d = await r.json();
+    setCfg({ ...EMPTY, ...d });
+    setClearing(false);
+    setMsg({ kind: 'info', text: 'Kredensial dihapus. Isi ulang untuk membuat tiket.' });
+  }
+
   if (loading) return <p className="muted">Memuat…</p>;
 
   return (
     <>
-      <h1>Konfigurasi JIRA</h1>
-      <p className="subtitle">Kredensial disimpan di server (file <code>.data/config.json</code>), bukan di browser. Token tidak pernah dikirim balik ke browser.</p>
+      <div className="page-head">
+        <div>
+          <h1>Konfigurasi JIRA</h1>
+          <p className="subtitle">Kredensial disimpan di server (file <code>.data/config.json</code>), bukan di browser. Token tidak pernah dikirim balik ke browser.</p>
+        </div>
+        <Link href="/" className="btn secondary small">← Kembali ke Buat Tiket</Link>
+      </div>
 
       <div className="card">
         <h2>Kredensial</h2>
@@ -92,6 +109,10 @@ export default function ConfigPage() {
         </button>
         <button className="secondary" onClick={save} disabled={saving || testing}>
           {saving ? 'Menyimpan…' : 'Simpan saja'}
+        </button>
+        <span style={{ flex: 1 }} />
+        <button className="danger" onClick={clearEnv} disabled={clearing || saving || testing}>
+          {clearing ? 'Menghapus…' : '🗑️ Clear env'}
         </button>
       </div>
     </>

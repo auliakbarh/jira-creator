@@ -38,12 +38,31 @@ export default function Home() {
 
   const [uac, setUac] = useState<UacTicket | null>(null);
   const [plan, setPlan] = useState<EpicPlan | null>(null);
+  const [historyId, setHistoryId] = useState<string | null>(null);
 
   const [creating, setCreating] = useState(false);
   const [result, setResult] = useState<{ epic?: any; created?: any; children?: any[] } | null>(null);
   const poll = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => () => { if (poll.current) clearInterval(poll.current); }, []);
+
+  // Reproduce from history: the Riwayat page stashes an entry then routes here.
+  useEffect(() => {
+    const raw = typeof window !== 'undefined' ? sessionStorage.getItem('jira-repro') : null;
+    if (!raw) return;
+    sessionStorage.removeItem('jira-repro');
+    try {
+      const e = JSON.parse(raw);
+      setMode(e.mode);
+      setLang(e.lang === 'id' ? 'id' : 'en');
+      setProjectKey(e.projectKey || '');
+      if (e.issuetype) setIssuetype(e.issuetype);
+      setRequirement(e.requirement || '');
+      setHistoryId(null); // a re-create logs a new history entry
+      if (e.mode === 'uac') { setUac(e.payload); setStep('review'); }
+      else { setPlan(e.payload); setStep('review'); }
+    } catch { /* ignore malformed repro */ }
+  }, []);
 
   // On load, check env. If creds missing → force the env modal open.
   useEffect(() => {
@@ -58,25 +77,41 @@ export default function Home() {
   }, []);
 
   // ── Build editable models from a generation result ──
-  function loadUac(markdown: string, ticket?: any) {
+  function loadUac(markdown: string, ticket?: any): UacTicket {
     const { summary, description } = splitUAC(markdown);
-    setUac({
+    const u: UacTicket = {
       summary: ticket?.summary || summary,
       description: ticket?.description ?? description,
       issuetype: ticket?.issuetype || issuetype,
       priority: ticket?.priority || 'Medium',
       labels: ticket?.labels || ['uac'],
       projectKey: ticket?.projectKey || projectKey,
-    });
+    };
+    setUac(u);
     setStep('review');
+    return u;
   }
-  function loadPlan(r: { epic: any; tasks: any[] }) {
-    setPlan({
+  function loadPlan(r: { epic: any; tasks: any[] }): EpicPlan {
+    const p: EpicPlan = {
       epic: { summary: r.epic.summary, description: r.epic.description || '' },
       tasks: (r.tasks || []).map((t) => ({ summary: t.summary, description: t.description || '', issuetype: t.issuetype || 'Task' })),
       projectKey,
-    });
+    };
+    setPlan(p);
     setStep('review');
+    return p;
+  }
+
+  // ── Record a freshly generated/pasted result into history ──
+  async function recordHistory(m: Mode, payload: UacTicket | EpicPlan) {
+    try {
+      const r = await fetch('/api/history', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: m, lang, projectKey, issuetype, requirement, payload, created: false }),
+      });
+      const d = await r.json();
+      if (d.ok) setHistoryId(d.entry.id);
+    } catch { /* history is best-effort */ }
   }
 
   // ── Submit a generation job for the Claude Code bridge to process ──
@@ -98,8 +133,8 @@ export default function Home() {
       setJobStatus(jr.job.status);
       if (jr.job.status === 'done') {
         clearInterval(poll.current!);
-        if (mode === 'uac') loadUac(jr.job.result.markdown, jr.job.result.ticket);
-        else loadPlan(jr.job.result);
+        if (mode === 'uac') recordHistory('uac', loadUac(jr.job.result.markdown, jr.job.result.ticket));
+        else recordHistory('epic', loadPlan(jr.job.result));
       } else if (jr.job.status === 'error') {
         clearInterval(poll.current!);
         setErr(jr.job.error || 'Generation gagal.');
@@ -114,11 +149,11 @@ export default function Home() {
     try {
       if (mode === 'uac') {
         if (!pasteText.trim()) throw new Error('Tempel markdown UAC dulu.');
-        loadUac(pasteText.trim());
+        recordHistory('uac', loadUac(pasteText.trim()));
       } else {
         const parsed = JSON.parse(pasteText.trim());
         if (!parsed.epic || !Array.isArray(parsed.tasks)) throw new Error('JSON harus punya { epic, tasks }.');
-        loadPlan(parsed);
+        recordHistory('epic', loadPlan(parsed));
       }
     } catch (e) {
       setErr(`Gagal memproses: ${(e as Error).message}`);
@@ -145,10 +180,31 @@ export default function Home() {
     if (!d.ok) { setErr(d.error); return; }
     setResult(d);
     setStep('done');
+    persistCreated(d);
+  }
+
+  // Update the history entry as created (or create one if none yet), with the
+  // final edited payload and the JIRA result.
+  async function persistCreated(result: any) {
+    const payload = mode === 'uac' ? uac : plan;
+    if (!payload) return;
+    try {
+      if (historyId) {
+        await fetch(`/api/history/${historyId}`, {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ payload, created: true, result }),
+        });
+      } else {
+        await fetch('/api/history', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode, lang, projectKey, issuetype, requirement, payload, created: true, result }),
+        });
+      }
+    } catch { /* best-effort */ }
   }
 
   function reset() {
-    setStep('input'); setUac(null); setPlan(null); setResult(null);
+    setStep('input'); setUac(null); setPlan(null); setResult(null); setHistoryId(null);
     setRequirement(''); setPasteText(''); setInputTab('generate'); setJobId(null); setErr(null);
   }
 

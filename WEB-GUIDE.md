@@ -64,6 +64,24 @@ Klik **🚀 Buat ke JIRA**:
 Layar **Selesai** menampilkan key + tautan tiap tiket. Child yang gagal ditampilkan dengan
 pesan errornya (sisanya tetap dibuat). Klik **Buat tiket lain** untuk mengulang.
 
+## Riwayat (history)
+
+Menu **Riwayat** menyimpan setiap UAC/breakdown yang digenerate dan tiket yang dibuat
+(disimpan server-side di `.data/history/`). Tiap item:
+
+- **♻️ Reproduce** → memuat ulang isi tiket ke halaman Buat Tiket (step tinjau) untuk diedit
+  & dibuat lagi. Re-create dicatat sebagai entri riwayat baru.
+- **✏️ Edit** → ubah requirement & isi tiket (UAC/Epic) langsung di kartu riwayat, lalu
+  **Simpan perubahan** (atau langsung *Reproduce versi ini*).
+- **🗑️ Hapus** → menghapus item riwayat itu.
+
+Badge **✓ dibuat** = sudah dipush ke JIRA (dengan tautan key); **draft** = baru digenerate.
+
+## Konfigurasi: clear env & kembali
+
+Di halaman **Konfigurasi**: **🗑️ Clear env** menghapus semua kredensial tersimpan
+(`.data/config.json`), dan **← Kembali ke Buat Tiket** membawa balik ke alur pembuatan tiket.
+
 ## Troubleshooting
 
 | Gejala | Sebab & solusi                                                                                                                                         |
